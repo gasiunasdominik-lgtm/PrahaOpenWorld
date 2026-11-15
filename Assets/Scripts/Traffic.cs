@@ -27,7 +27,7 @@ public class Net
         var grid = new Dictionary<Vector2Int, List<(int l, int v)>>();
         void Index() { grid.Clear(); for (int l = 0; l < raw.Count; l++) for (int v = 0; v < raw[l].p.Count; v++) { var c = CellOf(raw[l].p[v].x, raw[l].p[v].y); if (!grid.TryGetValue(c, out var g)) grid[c] = g = new(); g.Add((l, v)); } }
         Index();
-        var inserts = new List<(int l, int after, Vector2 at, float y)>();
+        var inserts = new List<(int l, int after, Vector2 at, float y)>(); var snaps = new List<(int l, int e, Vector2 at)>();
         for (int l = 0; l < raw.Count; l++)
             foreach (int e in new[] { 0, raw[l].p.Count - 1 })
             {
@@ -44,8 +44,10 @@ public class Net
                             var q = A + ab * t; float d = (q - E).magnitude;
                             if (d < best && (q - A).magnitude > Same && (q - B).magnitude > Same) { best = d; pick = (o, v, q, Mathf.Lerp(raw[o].y[v], raw[o].y[v + 1], t)); }
                         }
-                if (pick.HasValue) inserts.Add(pick.Value);
+                if (pick.HasValue) { inserts.Add(pick.Value); snaps.Add((l, e, pick.Value.Item3)); }
             }
+        // the end moves onto the new vertex, so the cut below joins them both ways (2–3 m apart was a one-way link)
+        foreach (var (l, e, at) in snaps) raw[l].p[e] = at;
         // X-crossings at the same height: both lines get a vertex at the crossing point
         var segs = new Dictionary<Vector2Int, List<(int l, int v)>>();
         for (int l = 0; l < raw.Count; l++)
@@ -216,7 +218,9 @@ public class Net
                 path.Reverse(); return path;
             }
             closed.Add(cur);
-            foreach (var (t, d, at) in Outs(cur.s, cur.dir))
+            var outs = Outs(cur.s, cur.dir);
+            if (outs.Count == 0) outs.Add((cur.s, -cur.dir, cur.dir > 0 ? N(cur.s) - 1 : 0)); // dead end: drivers turn round
+            foreach (var (t, d, at) in outs)
             {
                 var nx = (t, d); if (closed.Contains(nx)) continue;
                 float ng = g[cur] + Len[t];
