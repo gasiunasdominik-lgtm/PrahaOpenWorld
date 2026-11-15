@@ -292,6 +292,7 @@ public class GameManager : MonoBehaviour
         hud.SetMinimap(currentCar ? currentCar.transform.eulerAngles.y : player.transform.eulerAngles.y);
         hud.SetSpeed(currentCar != null, currentCar ? currentCar.SpeedKmh : 0f);
 
+        if (Boats.I && Boats.I.Interact(kb, hud, this)) { CheckLandmarks(focus); return; }
         if (Transit.I.Interact(kb, hud, this)) { CheckLandmarks(focus); UpdateDust(); return; }
         var near = currentCar ? null : NearestCar(4f);
         hud.promptText.text = currentCar ? "[E] VYSTOUPIT    [H] TROUBIT    [R] OTOČIT AUTO" : near ? "[E] NASTOUPIT" : "";

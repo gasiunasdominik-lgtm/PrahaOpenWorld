@@ -57,13 +57,95 @@ public class Boats : MonoBehaviour
         Debug.Log($"[Lodě] {boats.Count} (z toho u břehu {moored})");
     }
 
-    void Add(GameObject go, Vector3 at, float yaw, float speed, float look, Vector2 home = default)
+    void Add(GameObject vis, Vector3 at, float yaw, float speed, float look, Vector2 home = default)
     {
-        go.transform.SetParent(transform, false);
-        go.transform.SetPositionAndRotation(at, Quaternion.Euler(0, yaw, 0));
-        var b = go.AddComponent<Boat>(); b.speed = speed; b.look = look; b.home = home; b.phase = Random.value * 10f;
+        var root = new GameObject(vis.name);
+        root.transform.SetParent(transform, false);
+        root.transform.SetPositionAndRotation(at, Quaternion.Euler(0, yaw, 0));
+        vis.transform.SetParent(root.transform, false);
+        // hull box from the model, starting just under the waterline so it meets banks and bridge piers, not the river bed
+        var bounds = new Bounds(); bool first = true;
+        foreach (var f in vis.GetComponentsInChildren<MeshFilter>()) { var mb = f.sharedMesh.bounds; if (first) { bounds = mb; first = false; } else bounds.Encapsulate(mb); }
+        var box = root.AddComponent<BoxCollider>();
+        float bottom = -0.35f, top = bounds.max.y;
+        box.center = new Vector3(bounds.center.x, (bottom + top) / 2f, bounds.center.z);
+        box.size = new Vector3(bounds.size.x, top - bottom, bounds.size.z);
+        var rb = root.AddComponent<Rigidbody>();
+        rb.isKinematic = true; rb.useGravity = false; rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.mass = vis.name == "Slapadlo" ? 250f : 60000f; rb.linearDamping = 0.6f; rb.angularDamping = 2.5f;
+        rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        var b = root.AddComponent<Boat>(); b.speed = speed; b.look = look; b.home = home; b.phase = Random.value * 10f;
+        b.vis = vis.transform; b.rb = rb; b.maxSpeed = vis.name == "Slapadlo" ? 2.6f : 6f; b.camRadius = vis.name == "Slapadlo" ? 7f : 20f;
+        b.label = vis.name == "Slapadlo" ? "ŠLAPADLO" : "LOĎ";
+        b.camTarget = new GameObject("CamTarget").transform; b.camTarget.SetParent(root.transform, false);
+        b.camTarget.localPosition = new Vector3(0, top + 0.8f, 0);
         boats.Add(b);
     }
+
+    // ---- the player at the helm ----------------------------------------------------------------------------------
+    public Boat driving;
+    Boat Nearest(Vector3 p, float r)
+    {
+        Boat best = null; float bd = float.MaxValue;
+        foreach (var b in boats)
+        {
+            var c = b.GetComponent<BoxCollider>().ClosestPoint(p); float d = (c - p).sqrMagnitude;
+            if (d < r * r && d < bd) { bd = d; best = b; }
+        }
+        return best;
+    }
+
+    // dry, walkable ground near the boat to step off onto
+    static Vector3? Shore(Vector3 p)
+    {
+        for (float r = 3f; r <= 22f; r += 1.5f)
+            for (int k = 0; k < 16; k++)
+            {
+                float a = k * Mathf.PI / 8f; float x = p.x + Mathf.Cos(a) * r, z = p.z + Mathf.Sin(a) * r;
+                float h = MapBuilder.Height(x, z);
+                if (h > MapBuilder.WaterY + 0.3f && h < MapBuilder.WaterY + 6f) return new Vector3(x, h + 0.1f, z);
+            }
+        return null;
+    }
+
+    public bool Interact(UnityEngine.InputSystem.Keyboard kb, Hud hud, GameManager gm)
+    {
+        bool e = kb != null && kb.eKey.wasPressedThisFrame;
+        var player = gm.player;
+        if (driving)
+        {
+            player.transform.position = driving.transform.position + Vector3.up * 1.5f;
+            var shore = Shore(driving.transform.position);
+            hud.promptText.text = (shore != null ? "[E] VYSTOUPIT NA BŘEH    " : "DOPLUJ KE BŘEHU    ") + "W/S PLYN  ·  A/D KORMIDLO";
+            hud.SetSpeed(true, driving.rb.linearVelocity.magnitude * 3.6f);
+            if (e && shore is Vector3 at) Leave(gm, at);
+            return true;
+        }
+        if (gm.currentCar) return false;
+        var near = Nearest(player.transform.position, 6f);
+        if (!near) return false;
+        hud.promptText.text = "[E] ŘÍDIT " + near.label;
+        if (e) Board(gm, near);
+        return true;
+    }
+
+    public void Board(GameManager gm, Boat b)
+    {
+        driving = b; b.SetDriven(true);
+        gm.player.controlEnabled = false; gm.player.gameObject.SetActive(false);
+        gm.rig.FollowTarget(b.camTarget, b.camRadius, b.transform.eulerAngles.y);
+        GameAudio.I?.PlayAt(GameAudio.I.door, b.transform.position, 0.6f);
+    }
+
+    public void Leave(GameManager gm, Vector3 at)
+    {
+        driving.SetDriven(false); driving = null;
+        gm.player.gameObject.SetActive(true); gm.player.Teleport(at, gm.player.transform.eulerAngles.y); gm.player.controlEnabled = true;
+        gm.rig.FollowPlayer(gm.player.camTarget);
+    }
+
+    public Boat NearestTo(Vector3 p, float r) => Nearest(p, r);
 
     // ---- models -------------------------------------------------------------------------------------------------
 
@@ -124,16 +206,52 @@ public class Boats : MonoBehaviour
 
 public class Boat : MonoBehaviour
 {
-    public float speed, look, phase; public Vector2 home;
-    float heading, turn;
+    public float speed, look, phase, maxSpeed = 6f, camRadius = 20f; public Vector2 home;
+    public Transform vis, camTarget; public Rigidbody rb; public string label;
+    public bool Driven { get; private set; }
+    float heading, turn, throttle;
+    public float debugThrottle, debugRudder; // automated tests drive without a keyboard
 
     void Start() { heading = transform.eulerAngles.y; }
 
     static bool Wet(Vector3 p) => MapBuilder.Height(p.x, p.z) < -1f;
 
+    public void SetDriven(bool on)
+    {
+        Driven = on; rb.isKinematic = !on;
+        gameObject.tag = on ? "Player" : "Untagged"; // the camera's deoccluder ignores what the player drives
+        if (!on) { heading = transform.eulerAngles.y; speed = 0f; } // left where the player moored it
+    }
+
     void Update()
     {
         float t = Time.time + phase;
+        // bobbing and rolling on the ripples: only the model moves, the hull body stays level on the water
+        float roll = Mathf.Sin(t * 0.63f) * 1.2f + (Driven ? -turn * 0.08f : 0f);
+        vis.localPosition = Vector3.up * (Mathf.Sin(t * 1.1f) * 0.05f);
+        vis.localRotation = Quaternion.Euler(Mathf.Sin(t * 0.8f) * 0.8f - throttle * 1.5f, 0, roll);
+    }
+
+    void FixedUpdate()
+    {
+        float dt = Time.fixedDeltaTime;
+        if (Driven)
+        {
+            var kb = UnityEngine.InputSystem.Keyboard.current;
+            float th = (kb == null ? 0 : (kb.wKey.isPressed ? 1 : 0) - (kb.sKey.isPressed ? 0.5f : 0)) + debugThrottle;
+            float rd = (kb == null ? 0 : (kb.dKey.isPressed ? 1 : 0) - (kb.aKey.isPressed ? 1 : 0)) + debugRudder;
+            throttle = Mathf.MoveTowards(throttle, th, dt * 0.8f);
+            var v = rb.linearVelocity; var fwd = transform.forward;
+            float along = Vector3.Dot(v, fwd);
+            // thrust up to hull speed, water resistance sideways (a hull doesn't slide), rudder works with flow
+            if (along < maxSpeed) rb.AddForce(fwd * throttle * maxSpeed * 0.45f, ForceMode.Acceleration);
+            var side = v - fwd * along; rb.AddForce(-side * 1.8f, ForceMode.Acceleration);
+            turn = Mathf.Lerp(turn, rd * 22f * Mathf.Clamp01(0.25f + Mathf.Abs(along) / maxSpeed), dt * 2f);
+            rb.MoveRotation(Quaternion.Euler(0, rb.rotation.eulerAngles.y + turn * dt * Mathf.Sign(along + 0.2f), 0));
+            var p = rb.position; p.y = MapBuilder.WaterY; rb.position = p;
+            return;
+        }
+        throttle = 0f;
         if (speed > 0f)
         {
             var fwd = Quaternion.Euler(0, heading, 0) * Vector3.forward;
@@ -149,18 +267,16 @@ public class Boat : MonoBehaviour
                 }
                 turn = Mathf.Sign(best) * Mathf.Min(Mathf.Abs(best), 40f);
             }
-            else turn = Mathf.MoveTowards(turn, 0f, 10f * Time.deltaTime);
+            else turn = Mathf.MoveTowards(turn, 0f, 10f * dt);
             // pedal boats stay near their rental
             if (home != default && Vector2.Distance(new Vector2(transform.position.x, transform.position.z), home) > 110f)
             {
                 var to = new Vector3(home.x - transform.position.x, 0, home.y - transform.position.z);
                 turn = Mathf.DeltaAngle(heading, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg) > 0 ? 20f : -20f;
             }
-            heading += turn * Time.deltaTime;
-            transform.position += Quaternion.Euler(0, heading, 0) * Vector3.forward * speed * Time.deltaTime;
+            heading += turn * dt;
+            var np = rb.position + Quaternion.Euler(0, heading, 0) * Vector3.forward * speed * dt; np.y = MapBuilder.WaterY;
+            rb.MovePosition(np); rb.MoveRotation(Quaternion.Euler(0, heading, 0));
         }
-        // bobbing on the ripples
-        var p = transform.position; p.y = MapBuilder.WaterY + Mathf.Sin(t * 1.1f) * 0.05f; transform.position = p;
-        transform.rotation = Quaternion.Euler(Mathf.Sin(t * 0.8f) * 0.8f, heading, Mathf.Sin(t * 0.63f) * 1.2f);
     }
 }
