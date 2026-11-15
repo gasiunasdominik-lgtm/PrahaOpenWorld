@@ -26,7 +26,9 @@ public static class MapBuilder
         float fx = Mathf.Clamp((x - t.x0) / t.cell, 0, t.w - 1.001f), fz = Mathf.Clamp((z - t.z0) / t.cell, 0, t.h - 1.001f);
         int i = (int)fx, j = (int)fz; float u = fx - i, v = fz - j;
         float a = hm[j * t.w + i], b = hm[j * t.w + i + 1], c = hm[(j + 1) * t.w + i], d = hm[(j + 1) * t.w + i + 1];
-        return Mathf.Lerp(Mathf.Lerp(a, b, u), Mathf.Lerp(c, d, u), v);
+        // the same two triangles as the ground mesh (BuildTerrain: fan from (0,0), diagonal to (1,1)), not bilinear:
+        // on steep cells the two differed by metres and roads, trees and people sank in or floated
+        return v >= u ? a + u * (d - c) + v * (c - a) : a + u * (b - a) + v * (d - b);
     }
 
     public static string District(Vector3 p)
@@ -161,6 +163,21 @@ public static class MapBuilder
             var side = Vector3.Cross(Vector3.up, new Vector3(b.x - a.x, 0, b.z - a.z)).normalized * hw;
             if (side == Vector3.zero) continue;
             float len = Vector3.Distance(a, b);
+            if (!wet[i] && !wet[i + 1])
+            {
+                // on land: drape on the terrain in 4 m steps, each corner on its own ground. A straight strip between OSM points
+                // (often 30+ m apart) or across a side slope let the terrain poke through the road.
+                int k = Mathf.Max(1, Mathf.CeilToInt(len / 4f));
+                Vector3 G(Vector3 q) => new(q.x, Height(q.x, q.z) + lift, q.z);
+                for (int s = 0; s < k; s++)
+                {
+                    var c0 = Vector3.Lerp(a, b, (float)s / k); var c1 = Vector3.Lerp(a, b, (float)(s + 1) / k);
+                    float v0 = len * s / k / 6, v1 = len * (s + 1) / k / 6;
+                    mb.Poly(m, new[] { G(c0 - side), G(c1 - side), G(c1 + side), G(c0 + side) },
+                        new[] { new Vector2(0, v0), new Vector2(0, v1), new Vector2(width / 6, v1), new Vector2(width / 6, v0) }, Vector3.up);
+                }
+                continue;
+            }
             mb.Poly(m, new[] { a - side, b - side, b + side, a + side },
                 new[] { new Vector2(0, 0), new Vector2(0, len / 6), new Vector2(width / 6, len / 6), new Vector2(width / 6, 0) }, Vector3.up);
             if (parapet != null && (wet[i] || wet[i + 1]))
@@ -190,6 +207,7 @@ public static class MapBuilder
 
     // Photoreal mesh tiles (IPR Praha, 5 cm/px; Tools/fetch_ipr_mesh.py), pilot of phase 8. Where one lies, it replaces the
     // LOD2 buildings and the hand-made pieces: MeshCover holds its 5 m cells. Looks only: the OSM footprints still collide.
+    const bool UsePhotoMesh = false;
     public static readonly HashSet<Vector2Int> MeshCover = new();
     public static Vector2Int Cell5(float x, float z) => new(Mathf.FloorToInt(x / 5f), Mathf.FloorToInt(z / 5f));
     public static bool Covered(float x, float z) => MeshCover.Contains(Cell5(x, z));
@@ -243,10 +261,13 @@ public static class MapBuilder
         if (new string(r.ReadChars(4)) != "IPR1") return false;
         var labels = new string[r.ReadInt32()];
         for (int i = 0; i < labels.Length; i++) labels[i] = System.Text.Encoding.UTF8.GetString(r.ReadBytes(r.ReadByte()));
+        // two-sided copies (the cached ones are shared with the rest of the city): the data's winding and normals do not say
+        // reliably which side is out, so faces are oriented by geometry below and a courtyard wall facing "inward" still shows
+        static Material TwoSided(Material m) { var c = new Material(m) { name = m.name + "_2s" }; c.SetFloat("_Cull", 0f); c.doubleSidedGI = true; return c; }
         var facades = new Material[Palette.Facades.Length];
-        for (int i = 0; i < facades.Length; i++) facades[i] = Gfx.Facade(Palette.Facades[i]);
-        var tiled = Gfx.Mat(Palette.Terracotta, 0.1f);
-        var flat = Gfx.Mat(Color.Lerp(Palette.Slate, Palette.Plinth, 0.5f), 0.1f);
+        for (int i = 0; i < facades.Length; i++) facades[i] = TwoSided(Gfx.Facade(Palette.Facades[i]));
+        var tiled = TwoSided(Gfx.Mat(Palette.Terracotta, 0.1f));
+        var flat = TwoSided(Gfx.Mat(Color.Lerp(Palette.Slate, Palette.Plinth, 0.5f), 0.1f));
         var tiles = new Dictionary<Vector2Int, MeshBuilder>();
         const float Q = 0.05f;
         var pts = new Vector3[3]; var uvs = new Vector2[3];
@@ -276,6 +297,13 @@ public static class MapBuilder
                 var n = Vector3.Cross(pts[1] - pts[0], pts[2] - pts[0]);
                 if (n.sqrMagnitude < 1e-6f) continue;
                 n.Normalize();
+                // roofs face up, walls away from the building's middle (light comes from the right side; the material is two-sided)
+                if (Mathf.Abs(n.y) > 0.35f) { if (n.y < 0) n = -n; }
+                else
+                {
+                    var mid = (pts[0] + pts[1] + pts[2]) / 3f;
+                    if (n.x * (mid.x - ox) + n.z * (mid.z - oz) < 0) n = -n;
+                }
                 Material m;
                 if (n.y > 0.97f) { m = flat; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
                 else if (n.y > 0.35f) { m = tiled; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
@@ -323,7 +351,9 @@ public static class MapBuilder
 
     static void BuildBuildings(Transform root)
     {
-        BuildIprMesh(root);
+        // aerial photogrammetry melts at street level (blobby corners, black trees, smeared towers): off, crisp LOD2 everywhere.
+        // Tiles from Tools/fetch_ipr_mesh.py stay outside Resources (Hry/ipr-mesh/tiles) so builds do not ship 460 MB of them.
+        if (UsePhotoMesh) BuildIprMesh(root);
         bool ipr = BuildIpr(root); // when true, the OSM blocks below are invisible collision only
         var facades = new Material[Palette.Facades.Length];
         for (int i = 0; i < facades.Length; i++) facades[i] = Gfx.Facade(Palette.Facades[i]);
@@ -470,8 +500,10 @@ public static class MapBuilder
                     if (!tiles.TryGetValue(key, out var tm)) tiles[key] = tm = new MeshBuilder();
                     var p = new Vector3(x, gy, z); float crown = Mathf.Clamp(h * 0.3f, 1.2f, 6f); // crowns about a third as wide as tall
                     // low-poly on purpose: 36 000 real trees, ~20 triangles each (a two-dome crown cost 1.7 M on screen)
-                    tm.Cylinder(trunk, p, Mathf.Clamp(h * 0.025f, 0.15f, 0.6f), h * 0.45f, 4, false);
                     var cc = p + Vector3.up * (h - crown * 1.1f); float yaw = k * 37f;
+                    // trunk from 1 m under the ground (slopes, coarse 8 m terrain) up into the crown: with the 6 m crown cap a tall
+                    // tree's crown started far above a 0.45 h trunk and floated
+                    tm.Cylinder(trunk, p + Vector3.down, Mathf.Clamp(h * 0.025f, 0.15f, 0.6f), cc.y - p.y + 1f, 4, false);
                     tm.Cone(leaves, cc, crown, crown * 1.1f, 6, yaw);
                     tm.Cone(leaves, cc, crown, -crown * 0.6f, 6, yaw); // underside, so a crown is not an umbrella from below
                 }
@@ -495,11 +527,15 @@ public static class MapBuilder
 
     static void BuildBounds(Transform root)
     {
-        var t = D.terrain; float x0 = t.x0, z0 = t.z0, x1 = t.x0 + t.w * t.cell, z1 = t.z0 + t.h * t.cell;
+        // the ground mesh ends at the last height sample, (w-1)*cell, not w*cell: walls stood 8 m out over nothing and the player fell.
+        // Inner faces sit 4 m inside the ground's edge; 20 m thick so a car at full speed cannot tunnel through in one physics step.
+        var t = D.terrain; const float in4 = 4f, th = 20f;
+        float x0 = t.x0 + in4, z0 = t.z0 + in4, x1 = t.x0 + (t.w - 1) * t.cell - in4, z1 = t.z0 + (t.h - 1) * t.cell - in4;
         void Wall(Vector3 c, Vector3 size) { var go = new GameObject("Hranice"); go.transform.SetParent(root, false); go.transform.position = c; go.AddComponent<BoxCollider>().size = size; }
-        Wall(new Vector3(x0, 100, (z0 + z1) / 2), new Vector3(2, 400, z1 - z0));
-        Wall(new Vector3(x1, 100, (z0 + z1) / 2), new Vector3(2, 400, z1 - z0));
-        Wall(new Vector3((x0 + x1) / 2, 100, z0), new Vector3(x1 - x0, 400, 2));
-        Wall(new Vector3((x0 + x1) / 2, 100, z1), new Vector3(x1 - x0, 400, 2));
+        float cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, sx = x1 - x0 + 2 * th, sz = z1 - z0 + 2 * th;
+        Wall(new Vector3(x0 - th / 2, 100, cz), new Vector3(th, 600, sz));
+        Wall(new Vector3(x1 + th / 2, 100, cz), new Vector3(th, 600, sz));
+        Wall(new Vector3(cx, 100, z0 - th / 2), new Vector3(sx, 600, th));
+        Wall(new Vector3(cx, 100, z1 + th / 2), new Vector3(sx, 600, th));
     }
 }

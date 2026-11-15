@@ -8,7 +8,12 @@ import gzip, json, os, struct, sys, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(__file__))
-from fetch_map import BBOX, proj  # stejná projekce a výřez jako zbytek mapy
+from fetch_map import BBOX, proj, ORIGIN, KX, KZ  # stejná projekce a výřez jako zbytek mapy
+import math
+
+
+def projf(lon, lat):  # jako proj, ale bez zaokrouhlení na 10 cm (zubaté střechy)
+    return (lon - ORIGIN[1]) * KX, (lat - ORIGIN[0]) * KZ
 
 HOST = "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/Budovy3D_2020"
 SCENE, FEAT = HOST + "/SceneServer/layers/0", HOST + "/FeatureServer/0/query"
@@ -47,19 +52,27 @@ def node_buildings(n):
     fid = struct.unpack_from(f"<{fc}Q", b, o); o += fc * 8
     fr = struct.unpack_from(f"<{fc * 2}I", b, o)
     cx, cy, cz = n["obb"]["center"]
+    # normály jsou v geocentrických souřadnicích (ECEF), ne v místních: převod do (východ, sever, nahoru)
+    lo, la = math.radians(cx), math.radians(cy)
+    R = ((-math.sin(lo), math.cos(lo), 0.0),
+         (-math.sin(la) * math.cos(lo), -math.sin(la) * math.sin(lo), math.cos(la)),
+         (math.cos(la) * math.cos(lo), math.cos(la) * math.sin(lo), math.sin(la)))
     out = []
     for k in range(fc):
         tris = []
         for f in range(fr[2 * k], fr[2 * k + 1] + 1):  # faceRange je včetně konce
             v = [pos[3 * (3 * f + i): 3 * (3 * f + i) + 3] for i in range(3)]
-            p = [(proj(cx + a[0], cy + a[1]), cz + a[2]) for a in v]
+            p = [(projf(cx + a[0], cy + a[1]), cz + a[2]) for a in v]
             P = [(xz[0], h, xz[1]) for xz, h in p]  # x, y(výška), z
-            # orientace: geometrická normála musí souhlasit s normálou z dat (I3S je oboustranné, pořadí vrcholů nespolehlivé)
+            # orientace: geometrická normála musí souhlasit s normálou z dat (po převodu z ECEF)
             ux, uy, uz = (P[1][i] - P[0][i] for i in range(3)); wx, wy, wz = (P[2][i] - P[0][i] for i in range(3))
             gx, gy, gz = uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx
             # data jsou v (lon, lat, z) = (východ, sever, nahoru); ve hře (x, y, z) = (východ, nahoru, sever)
-            dn = [sum(nrm[3 * (3 * f + i) + j] for i in range(3)) for j in range(3)]
-            if gx * dn[0] + gy * dn[2] + gz * dn[1] < 0: P[1], P[2] = P[2], P[1]
+            e = [sum(nrm[3 * (3 * f + i) + j] for i in range(3)) for j in range(3)]
+            dn = [sum(R[r][j] * e[j] for j in range(3)) for r in range(3)]
+            d = gx * dn[0] + gy * dn[2] + gz * dn[1]
+            # 98,6 % trojúhelníků má v datech opačné pořadí vrcholů; nejasné případy (normála skoro v rovině) otočit taky
+            if d < 0.5 * math.sqrt(gx * gx + gy * gy + gz * gz) * math.sqrt(sum(x * x for x in dn)): P[1], P[2] = P[2], P[1]
             tris.append(P)
         out.append((fid[k], tris))
     return out
