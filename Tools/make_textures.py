@@ -135,8 +135,31 @@ def normal_from(H, plaster_n, strength=6.0):
     return out
 
 
+def water():
+    """Tileable ripple normal map (our own): sum of waves with whole-number frequencies, so it repeats seamlessly."""
+    import math
+    S = 512; rng = random.Random(3); waves = []
+    for _ in range(48):
+        f = rng.choice(range(3, 28)); a = rng.gauss(0, 0.6)  # mostly across the flow (the river runs north = texture v)
+        fx, fy = round(f * math.cos(a)), round(f * math.sin(a) * 0.6)
+        if fx == 0 and fy == 0: continue
+        waves.append((fx, fy, 1.0 / (fx * fx + fy * fy) ** 0.75, rng.random() * 6.283))
+    H = [[0.0] * S for _ in range(S)]
+    for y in range(S):
+        for x in range(S):
+            H[y][x] = sum(a * math.sin(6.283 * (fx * x + fy * y) / S + ph) for fx, fy, a, ph in waves)
+    out = Image.new("RGB", (S, S)); po = out.load(); k = 9.0
+    for y in range(S):
+        for x in range(S):
+            dx = (H[y][(x + 1) % S] - H[y][x - 1]) * k; dy = (H[y - 1][x] - H[(y + 1) % S][x]) * k
+            l = (dx * dx + dy * dy + 1) ** 0.5
+            po[x, y] = (int((-dx / l + 1) * 127.5), int((-dy / l + 1) * 127.5), int((1 / l + 1) * 127.5))
+    out.save(os.path.join(OUT, "Water_n.png"))
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+    water()
     surface("Roof", "RoofingTiles012A", "1K")
     surface("Mosaic", "PavingStones147", "2K")
     surface("Setts", "PavingStones048", "2K")

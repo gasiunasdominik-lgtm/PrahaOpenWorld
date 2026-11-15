@@ -86,8 +86,11 @@ public static class MapBuilder
 
         var water = new MeshBuilder();
         var t = D.terrain;
-        water.Ground(Gfx.Mat(Palette.River, 0.88f), t.x0, t.z0, t.x0 + t.w * t.cell, t.z0 + t.h * t.cell, WaterY, 10, 10);
-        water.Build("Vltava", root, false, false);
+        // Resources/Water.mat: ripple normals + a finer detail layer, glossy enough to mirror the sky (shipped as an asset so a
+        // build keeps the _NORMALMAP / _DETAIL_MULX2 variants); RiverFlow drifts both layers north with the current
+        var wm = Resources.Load<Material>("Water");
+        water.Ground(wm != null ? wm : Gfx.Mat(Palette.River, 0.88f), t.x0, t.z0, t.x0 + t.w * t.cell, t.z0 + t.h * t.cell, WaterY, 10, 10);
+        water.Build("Vltava", root, false, false).AddComponent<RiverFlow>();
 
         var asphalt = Gfx.Pbr("Asphalt", 0.2f, 3f, Color.white); // street UV: 6 m per unit
         var cobble = Gfx.Pbr("Setts", 0.12f, 4f, Color.white);
