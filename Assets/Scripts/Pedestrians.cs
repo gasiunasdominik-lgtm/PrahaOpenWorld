@@ -182,7 +182,10 @@ public class Walker : MonoBehaviour
             if (n.StartsWith("Torso") || n.StartsWith("Sleeve") || n.StartsWith("JacketHem")) r.sharedMaterial = coat;
             else if (n.StartsWith("Hair") || n.StartsWith("Fringe")) r.sharedMaterial = hair;
             else if (n.Contains("Scarf")) r.enabled = false; // the red scarf is the hero's signature
+            // only the big parts throw a shadow; eyes, hands and shoes were 1 300 extra shadow casters for nothing visible
+            if (!(n.StartsWith("Torso") || n.StartsWith("Head") || n.StartsWith("Thigh"))) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
+        CharacterMotion.LowPoly(go.transform);
         var w = go.AddComponent<Walker>(); w.cm = cm;
         // solid body (own layer): blocks the player; cars pass through it and are sensed by the trigger instead (a kinematic body would stop a car dead)
         var body = new GameObject("Telo") { layer = Traffic.BodyLayer }; body.transform.SetParent(go.transform, false);

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // Procedural motion for the primitive-built hero: gait bob + roll, limb swing, lean,
@@ -73,6 +74,39 @@ public class CharacterMotion : MonoBehaviour
         float target = 10f + sn * 55f + Mathf.Sin(phase * 2f + 1f) * 6f * amp + Mathf.Sin(Time.time * 1.7f) * 3f;
         scarfAngle = Mathf.Lerp(scarfAngle, target, 1f - Mathf.Exp(-dt / 0.08f));
         scarfTail.localRotation = Quaternion.Euler(scarfAngle, 0, Mathf.Sin(Time.time * 2.3f) * 4f * (0.3f + sn));
+    }
+
+    // Coarse stand-ins for Unity's sphere (768 tris) and capsule (832): a walker drops from ~7 400 to ~800 triangles.
+    static Mesh lowSphere, lowCapsule;
+    public static void LowPoly(Transform root)
+    {
+        if (!lowSphere)
+        {
+            float c = Mathf.Sqrt(0.5f) * 0.5f;
+            lowSphere = Lathe("LowSphere", new[] { new Vector2(0, -0.5f), new Vector2(c, -c), new Vector2(0.5f, 0), new Vector2(c, c), new Vector2(0, 0.5f) });
+            lowCapsule = Lathe("LowCapsule", new[] { new Vector2(0, -1f), new Vector2(c, -0.5f - c), new Vector2(0.5f, -0.5f), new Vector2(0.5f, 0.5f), new Vector2(c, 0.5f + c), new Vector2(0, 1f) });
+        }
+        foreach (var f in root.GetComponentsInChildren<MeshFilter>(true))
+            if (f.sharedMesh && f.sharedMesh.name.StartsWith("Sphere")) f.sharedMesh = lowSphere;
+            else if (f.sharedMesh && f.sharedMesh.name.StartsWith("Capsule")) f.sharedMesh = lowCapsule;
+    }
+
+    // Surface of revolution: profile (radius, y) from bottom pole to top pole, 8 sides, smooth normals.
+    static Mesh Lathe(string name, Vector2[] prof)
+    {
+        const int Seg = 8;
+        var v = new List<Vector3>(); var t = new List<int>();
+        foreach (var p in prof)
+            for (int i = 0; i <= Seg; i++) { float a = i * Mathf.PI * 2f / Seg; v.Add(new Vector3(Mathf.Sin(a) * p.x, p.y, Mathf.Cos(a) * p.x)); }
+        for (int r = 0; r + 1 < prof.Length; r++)
+            for (int i = 0; i < Seg; i++)
+            {
+                int a = r * (Seg + 1) + i, b = a + Seg + 1;
+                if (prof[r].x > 0f) { t.Add(a); t.Add(a + 1); t.Add(b); }          // skip the zero-area triangle at a pole
+                if (prof[r + 1].x > 0f) { t.Add(a + 1); t.Add(b + 1); t.Add(b); }
+            }
+        var m = new Mesh { name = name }; m.SetVertices(v); m.SetTriangles(t, 0);
+        m.RecalculateNormals(); m.RecalculateBounds(); return m;
     }
 
     public static CharacterMotion BuildHero(Transform root)

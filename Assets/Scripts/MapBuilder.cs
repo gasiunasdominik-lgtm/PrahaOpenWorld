@@ -393,10 +393,11 @@ public static class MapBuilder
                     var key = new Vector2Int(Mathf.FloorToInt(x / 300f), Mathf.FloorToInt(z / 300f));
                     if (!tiles.TryGetValue(key, out var tm)) tiles[key] = tm = new MeshBuilder();
                     var p = new Vector3(x, gy, z); float crown = Mathf.Clamp(h * 0.3f, 1.2f, 6f); // crowns about a third as wide as tall
-                    tm.Cylinder(trunk, p, Mathf.Clamp(h * 0.025f, 0.15f, 0.6f), h * 0.45f, 5);
-                    var cc = p + Vector3.up * (h - crown * 1.1f);
-                    tm.Dome(leaves, cc, crown, 1.1f, 6, 2);
-                    tm.Dome(leaves, cc, crown, -0.6f, 6, 1); // underside, so a crown is not an umbrella from below
+                    // low-poly on purpose: 36 000 real trees, ~20 triangles each (a two-dome crown cost 1.7 M on screen)
+                    tm.Cylinder(trunk, p, Mathf.Clamp(h * 0.025f, 0.15f, 0.6f), h * 0.45f, 4, false);
+                    var cc = p + Vector3.up * (h - crown * 1.1f); float yaw = k * 37f;
+                    tm.Cone(leaves, cc, crown, crown * 1.1f, 6, yaw);
+                    tm.Cone(leaves, cc, crown, -crown * 0.6f, 6, yaw); // underside, so a crown is not an umbrella from below
                 }
                 foreach (var kv in tiles) kv.Value.Build($"Stromy_{kv.Key.x}_{kv.Key.y}", root, false);
                 return;
