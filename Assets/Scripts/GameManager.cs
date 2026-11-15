@@ -70,6 +70,7 @@ public class GameManager : MonoBehaviour
         new GameObject("Zakon").AddComponent<Law>();
         new GameObject("Zakazky").AddComponent<Jobs>();
         gameObject.AddComponent<Inspect>();
+        new GameObject("Holubi").AddComponent<Pigeons>();
 
         rig = new GameObject("CameraRig").AddComponent<CameraRig>();
         rig.Setup();

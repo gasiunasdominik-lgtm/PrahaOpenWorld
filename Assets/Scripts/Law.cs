@@ -132,7 +132,9 @@ public class Law : MonoBehaviour
         float d = Vector3.Distance(at, me); if (d < 30f || d > 180f) return;
         Walker witness = null;
         foreach (var w in live) if (w != v && !w.Down && (w.transform.position - at).sqrMagnitude < 30f * 30f && Sees(w.transform.position + Vector3.up * 1.6f, at)) { witness = w; break; }
-        string what = Incidents[rng.Next(Incidents.Length)];
+        // pickpockets work tourists at busy metro interchanges (Policie ČR: ~half of Prague pickpocketing is in Prague 1–2)
+        bool hub = false; foreach (var st in MapBuilder.D.metro.stations) if ((new Vector3(st.p[0], at.y, st.p[1]) - at).sqrMagnitude < 250f * 250f) { hub = true; break; }
+        string what = hub && rng.NextDouble() < 0.7 ? Incidents[0] : Incidents[rng.Next(Incidents.Length)];
         if (!witness) { Jobs.News($"{CityBuilder.District(at)}: {what}, nikdo nic neviděl."); return; }
         witness.waiting = true;
         calls.Add(new Call { w = witness, at = at, t = CallTime, what = what, npc = true });

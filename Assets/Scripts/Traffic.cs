@@ -260,8 +260,9 @@ public class Traffic : MonoBehaviour
     // Two-phase cycle shared by all junctions: N–S green, all red, E–W green, all red.
     public static bool Green(Vector3 fwd)
     {
-        float t = Time.time % 32f; bool ns = Mathf.Abs(fwd.z) >= Mathf.Abs(fwd.x);
-        return ns ? t < 14f : t >= 16f && t < 30f;
+        // 70 s cycle, inside the usual 60–90 s urban range (odhad, TSK)
+        float t = Time.time % 70f; bool ns = Mathf.Abs(fwd.z) >= Mathf.Abs(fwd.x);
+        return ns ? t < 31f : t >= 35f && t < 66f;
     }
 
     void Awake()

@@ -89,6 +89,21 @@ public class Pedestrians : MonoBehaviour
             w.gameObject.SetActive(true);
             w.Begin(s, v, target, purpose, name, door, rng);
             live.Add(w);
+            // ~half of city-centre pedestrians walk in groups of 2–4, abreast at low density (Moussaïd et al. 2010)
+            if (rng.NextDouble() < 0.4 && live.Count + 3 < maxPeds)
+            {
+                int n = rng.NextDouble() < 0.75 ? 1 : rng.NextDouble() < 0.7 ? 2 : 3;
+                w.GroupSpeed(n + 1);
+                for (int k = 0; k < n; k++)
+                {
+                    var c = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
+                    c.gameObject.SetActive(true);
+                    c.Begin(s, v, target, purpose, name, door, rng);
+                    c.leader = w; c.offset = (k / 2 + 1) * 0.75f * (k % 2 == 0 ? 1f : -1f);
+                    c.transform.position = w.transform.position + w.transform.right * c.offset;
+                    live.Add(c);
+                }
+            }
             return;
         }
     }
@@ -142,6 +157,8 @@ public class Walker : MonoBehaviour
     public Vector3 dest;
     public bool Down => down > 0f;
     public bool waiting; // stands still: waiting for a taxi or on the phone to the police
+    public Walker leader; public float offset; // walking in a group: keep abreast of the leader
+    public void GroupSpeed(int n) => speed = Mathf.Max(0.8f, speed - 0.04f * n); // groups walk slower (Moussaïd et al. 2010)
     CharacterMotion cm; Rigidbody rb; CapsuleCollider solid;
     int street, vtx, dir; float u, side, speed, down; Vector3 dodge, lastPos;
     enum Mode { Street, Exit, Enter }
@@ -180,7 +197,9 @@ public class Walker : MonoBehaviour
         var p = MapBuilder.D.streets[s].p; int n = p.Length / 2;
         dir = v == n - 1 ? -1 : v == 0 ? 1 : (rng.Next(2) == 0 ? 1 : -1);
         u = 0f; dodge = Vector3.zero; down = 0f;
-        speed = 1.2f + (float)rng.NextDouble() * 0.5f;
+        // free walking speed ~ N(1.34, 0.2) m/s, 15th percentile ~1.11 (Tarawneh 2001)
+        float g = Mathf.Sqrt(-2f * Mathf.Log(1f - (float)rng.NextDouble())) * Mathf.Cos(2f * Mathf.PI * (float)rng.NextDouble());
+        speed = Mathf.Clamp(1.34f + 0.2f * g, 0.8f, 1.9f); leader = null;
         float hw = MapBuilder.D.streets[s].w / 2f;
         side = MapBuilder.D.streets[s].foot ? ((float)rng.NextDouble() * 2f - 1f) * hw * 0.7f : (rng.Next(2) == 0 ? 1 : -1) * (hw - 0.4f);
         Stand();
@@ -204,6 +223,17 @@ public class Walker : MonoBehaviour
             return;
         }
         if (waiting) { cm.Tick(Vector3.zero, Time.deltaTime); lastPos = transform.position; return; }
+        if (leader)
+        {
+            if (!leader.gameObject.activeSelf) { leader = null; Pedestrians.I.Despawn(this); return; } // went in / left together
+            var goal = leader.transform.position + leader.transform.right * offset;
+            var stepv = Vector3.ClampMagnitude(goal - transform.position, 2.5f * Time.deltaTime);
+            var np = transform.position + stepv; np.y = Mathf.Max(MapBuilder.Height(np.x, np.z) + 0.12f, goal.y);
+            transform.rotation = leader.transform.rotation;
+            rb.MovePosition(np); transform.position = lastPos = np;
+            cm.Tick(stepv / Mathf.Max(Time.deltaTime, 1e-4f), Time.deltaTime);
+            return;
+        }
         Vector3 pos;
         if (mode != Mode.Street)
         {

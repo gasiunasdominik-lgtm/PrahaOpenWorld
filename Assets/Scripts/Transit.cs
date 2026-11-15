@@ -65,7 +65,9 @@ public class Transit : MonoBehaviour
             float d = (t.Mid - focus).magnitude;
             if ((d > 700f || t.dead) && (d > 900f || !Net.InView(t.Mid))) { Destroy(t.gameObject); trams.RemoveAt(k); }
         }
-        int target = Mathf.Max(2, Mathf.RoundToInt(7 * Pedestrians.Activity(GameClock.I.hour)));
+        // trams in reach follow PID headways: 8 min at peak, 10–20 off-peak, ~30 at night (pid.cz)
+        float hr = GameClock.I.hour;
+        int target = hr < 5f ? 1 : (hr >= 6f && hr < 9f) || (hr >= 14f && hr < 18.5f) ? 7 : hr < 20f ? 5 : 3;
         if ((spawnTimer -= Time.deltaTime) <= 0f && trams.Count < target)
         {
             spawnTimer = 1f;
@@ -202,7 +204,7 @@ public class Tram : MonoBehaviour
     readonly Rigidbody[] secs = new Rigidbody[3];
     readonly List<Vector3> trail = new();
     Net net; System.Random rng; int s, i, dir, lastStop = -1; float speed, dwell, bell; Vector3 front;
-    const float Step = 0.5f, SecLen = 9.6f, Cruise = 11f;
+    const float Step = 0.5f, SecLen = 9.6f, Cruise = 9f; // ~32 km/h between stops → ~19.5 km/h network average with stops (TSK)
 
     public static Tram Create(Transform parent, Net net, int s, int v, int dir, System.Random rng)
     {
@@ -295,7 +297,7 @@ public class Tram : MonoBehaviour
             var d = Transit.I.stops[k] - front; float along = Vector3.Dot(d, fwd);
             if (along < -1f || along > 40f || (d - fwd * along).sqrMagnitude > 36f) continue;
             want = Mathf.Min(want, Mathf.Sqrt(2f * 1.2f * Mathf.Max(0f, along)) + 0.2f);
-            if (along < 1.5f) { lastStop = k; dwell = 12f; speed = 0f; return; }
+            if (along < 1.5f) { lastStop = k; dwell = 20f; /* 15–30 s (odhad) */ speed = 0f; return; }
         }
         speed = Mathf.MoveTowards(speed, want, (want > speed ? 1.2f : 4f) * dt);
         if (speed > 0.01f) { Advance(speed * dt); Pose(false); }
