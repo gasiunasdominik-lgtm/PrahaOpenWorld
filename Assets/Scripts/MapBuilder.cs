@@ -16,6 +16,20 @@ public static class MapBuilder
 
     public static Data D;
     public static readonly List<float[]> StreetY = new(); // walkable height per street vertex (bridges included)
+    // the surface between vertices, as Ribbon draws it: max(terrain, lerp of Floor) on land, deck and ramps included;
+    // a straight lerp of StreetY where Flat (a plain strip over water without an IPR bridge)
+    public static readonly List<float[]> StreetFloor = new();
+    public static readonly List<bool[]> StreetFlat = new();
+    static float[] lastFloor; static bool[] lastFlat;
+
+    public static float SurfaceY(int s, int a, int b, float t, float x, float z)
+    {
+        var y = StreetY[s];
+        if (s >= StreetFloor.Count) return Mathf.Lerp(y[a], y[b], t);
+        var f = StreetFloor[s]; var fl = StreetFlat[s];
+        if (fl[a] || fl[b]) return Mathf.Lerp(y[a], y[b], t);
+        return Mathf.Max(Height(x, z), Mathf.Lerp(f[a], f[b], t));
+    }
     static float[] hm; static byte[] lu;
     public const float WaterY = -0.6f;
     const int Chunk = 64; // terrain cells per mesh tile
@@ -59,14 +73,14 @@ public static class MapBuilder
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { D = null; hm = null; lu = null; StreetY.Clear(); Ipr.Clear(); MeshCover.Clear(); } // domain reload is off
+    static void ResetStatics() { D = null; hm = null; lu = null; StreetY.Clear(); StreetFloor.Clear(); StreetFlat.Clear(); Ipr.Clear(); MeshCover.Clear(); } // domain reload is off
 
     public static void Build(Transform root, List<(Vector3 pos, float yaw)> parking)
     {
         Load();
-        var mGround = Gfx.Mat(Color.Lerp(Palette.Cobble, Palette.Plinth, 0.5f), 0.1f, Gfx.CobbleTex);
+        var mGround = Gfx.Pbr("Mosaic", 0.1f, 4f, Color.white); // terrain UV: 4 m per unit; mosaic pavement ~1 m per tile
         var mPark = Gfx.Mat(Palette.Grass, 0.05f);
-        var mSquare = Gfx.Mat(Color.Lerp(Palette.Cobble, Palette.Sandstone, 0.35f), 0.1f, Gfx.CobbleTex);
+        var mSquare = Gfx.Pbr("Setts", 0.12f, 3f, Color.white); // granite setts of Prague squares
         var mBank = Gfx.Mat(Palette.GothicStone, 0.08f);
         BuildTerrain(root, new[] { mGround, mBank, mPark, mSquare });
 
@@ -75,17 +89,18 @@ public static class MapBuilder
         water.Ground(Gfx.Mat(Palette.River, 0.88f), t.x0, t.z0, t.x0 + t.w * t.cell, t.z0 + t.h * t.cell, WaterY, 10, 10);
         water.Build("Vltava", root, false, false);
 
-        var asphalt = Gfx.Mat(Palette.Asphalt, 0.18f);
-        var cobble = Gfx.Mat(Palette.CobbleDark, 0.1f, Gfx.CobbleTex);
+        var asphalt = Gfx.Pbr("Asphalt", 0.2f, 3f, Color.white); // street UV: 6 m per unit
+        var cobble = Gfx.Pbr("Setts", 0.12f, 4f, Color.white);
         var stone = Gfx.Mat(Palette.GothicStone, 0.08f);
         var rail = Gfx.Mat(Color.Lerp(Palette.Asphalt, Palette.Slate, 0.6f), 0.5f);
         BuildIprBridges(root); // before the streets: their stretches over water take the real deck's height
         var streets = new MeshBuilder();
         int k = 0;
-        StreetY.Clear();
+        StreetY.Clear(); StreetFloor.Clear(); StreetFlat.Clear();
         foreach (var s in D.streets)
         {
             StreetY.Add(Ribbon(streets, s.p, s.w, 0.12f, s.foot ? cobble : asphalt, stone));
+            StreetFloor.Add(lastFloor); StreetFlat.Add(lastFlat);
             // parked cars every few streets, on the kerb side of drivable ones
             if (!s.foot && s.w >= 7.5f && s.p.Length >= 4 && (k++ % 9) == 0)
             {
@@ -109,6 +124,7 @@ public static class MapBuilder
                 var line = new[] { sq.p[2 * i], sq.p[2 * i + 1], sq.p[2 * j], sq.p[2 * j + 1] };
                 walk.Add(new Poly { w = 4f, foot = true, p = line });
                 StreetY.Add(new[] { Height(line[0], line[1]), Height(line[2], line[3]) });
+                StreetFloor.Add(new[] { -1e4f, -1e4f }); StreetFlat.Add(new bool[2]);
             }
         }
         D.streets = walk.ToArray();
@@ -146,7 +162,7 @@ public static class MapBuilder
     {
         int n = p.Length / 2; if (n < 2) return new float[n];
         var pts = new Vector3[n]; var wet = new bool[n];
-        for (int i = 0; i < n; i++) { float h = Height(p[2 * i], p[2 * i + 1]); wet[i] = h < 0.5f; pts[i] = new Vector3(p[2 * i], h, p[2 * i + 1]); }
+        for (int i = 0; i < n; i++) { float h = Height(p[2 * i], p[2 * i + 1]); wet[i] = h < -1f; pts[i] = new Vector3(p[2 * i], h, p[2 * i + 1]); } // the river bed is carved to -3 m; low land (Karlín, ~0 m) is not water
         for (int i = 0; i < n; i++)
         {
             if (!wet[i]) continue;
@@ -182,7 +198,8 @@ public static class MapBuilder
         for (int i = 0; i < n; i++)
         {
             ramp[i] = -1e4f;
-            for (int j = 0; j < n; j++) if (onDeck[j]) ramp[i] = Mathf.Max(ramp[i], deckY[j] - lift - Mathf.Abs(cum[i] - cum[j]) * 0.12f);
+            for (int j = 0; j < n; j++)
+                if (wet[j]) ramp[i] = Mathf.Max(ramp[i], (onDeck[j] ? deckY[j] - lift : pts[j].y) - Mathf.Abs(cum[i] - cum[j]) * 0.12f); // IPR deck or our own strip
         }
         for (int i = 0; i < n; i++)
             if (onDeck[i]) pts[i].y = deckY[i] - lift;
@@ -227,8 +244,28 @@ public static class MapBuilder
                 foreach (float s in new[] { -1f, 1f })
                     mb.Wall(parapet, a + side * s, b + side * s, a.y - 1.2f, a.y + 1f, side * s);
         }
+        // joints: a bend leaves a wedge open on its outside, a junction leaves square-cut ends. A draped disc fills both.
+        if (parapet != null)
+            for (int i = 0; i < n; i++)
+            {
+                if (wet[i] || onDeck[i]) continue;
+                if (i > 0 && i < n - 1)
+                {
+                    var d0 = new Vector2(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z); var d1 = new Vector2(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+                    if (Vector2.Angle(d0, d1) < 8f) continue;
+                }
+                var ring = new Vector3[8]; var ruv = new Vector2[8];
+                for (int k = 0; k < 8; k++)
+                {
+                    float a = k * Mathf.PI / 4f; float x = pts[i].x + Mathf.Cos(a) * hw, z = pts[i].z + Mathf.Sin(a) * hw;
+                    ring[k] = new Vector3(x, Mathf.Max(Height(x, z), ramp[i]) + lift - 0.01f, z); ruv[k] = new Vector2(x, z) / 6f;
+                }
+                mb.Poly(m, ring, ruv, Vector3.up);
+            }
         var ys = new float[n];
         for (int i = 0; i < n; i++) ys[i] = pts[i].y;
+        lastFloor = new float[n]; lastFlat = new bool[n];
+        for (int i = 0; i < n; i++) { lastFloor[i] = onDeck[i] ? deckY[i] - lift : ramp[i]; lastFlat[i] = wet[i] && !onDeck[i]; }
         return ys;
     }
 
@@ -239,7 +276,7 @@ public static class MapBuilder
         for (float d = 5; d < 120; d += 5)
         {
             float h = Height(end.x + dir.x * d, end.z + dir.z * d);
-            if (h > 0.5f) return h;
+            if (h > -1f) return h;
         }
         return 6f;
     }
@@ -324,7 +361,7 @@ public static class MapBuilder
         if (new string(r.ReadChars(4)) != "IPR1") return;
         int nl = r.ReadInt32(); for (int i = 0; i < nl; i++) r.ReadBytes(r.ReadByte());
         var stone = new Material(Gfx.Mat(Palette.GothicStone, 0.08f)) { name = "IprMosty_2s" }; stone.SetFloat("_Cull", 0f);
-        var deck = new Material(Gfx.Mat(Palette.CobbleDark, 0.1f, Gfx.CobbleTex)) { name = "IprMostyDeck_2s" }; deck.SetFloat("_Cull", 0f);
+        var deck = new Material(Gfx.Pbr("Setts", 0.12f, 4f, Color.white)) { name = "IprMostyDeck_2s" }; // deck UV: 6 m per unit, like the streets deck.SetFloat("_Cull", 0f);
         const float Q = 0.05f; var pts = new Vector3[3]; var uvs = new Vector2[3];
         int count = r.ReadInt32();
         for (int k = 0; k < count; k++)
@@ -347,8 +384,33 @@ public static class MapBuilder
         Debug.Log($"[Mapa] IPR mosty: {count}, datum {datum:0.0} m");
     }
 
+    public static bool IprCollision; // buildings collide by IPR ground outlines; the OSM blocks are then not built at all
+
+    static Dictionary<int, List<Vector2[]>> LoadFootprints()
+    {
+        var asset = Resources.Load<TextAsset>("IprFootprints");
+        if (asset == null) return null;
+        var r = new System.IO.BinaryReader(new System.IO.MemoryStream(asset.bytes));
+        if (new string(r.ReadChars(4)) != "FPR1") return null;
+        int n = r.ReadInt32(); var d = new Dictionary<int, List<Vector2[]>>(n);
+        for (int k = 0; k < n; k++)
+        {
+            int id = r.ReadInt32(); int nr = r.ReadInt16(); var rings = new List<Vector2[]>(nr);
+            for (int i = 0; i < nr; i++)
+            {
+                int np = r.ReadInt16(); var pts = new Vector2[np];
+                for (int j = 0; j < np; j++) pts[j] = new Vector2(r.ReadSingle(), r.ReadSingle());
+                if (np > 1 && pts[0] == pts[np - 1]) Array.Resize(ref pts, np - 1); // closed rings repeat the first point
+                if (pts.Length >= 3) rings.Add(pts);
+            }
+            if (rings.Count > 0) d[id] = rings;
+        }
+        return d;
+    }
+
     static bool BuildIpr(Transform root)
     {
+        IprCollision = false;
         Ipr.Clear();
         var asset = Resources.Load<TextAsset>("IprBuildings");
         if (asset == null) return false;
@@ -359,11 +421,18 @@ public static class MapBuilder
         // two-sided copies (the cached ones are shared with the rest of the city): the data's winding and normals do not say
         // reliably which side is out, so faces are oriented by geometry below and a courtyard wall facing "inward" still shows
         static Material TwoSided(Material m) { var c = new Material(m) { name = m.name + "_2s" }; c.SetFloat("_Cull", 0f); c.doubleSidedGI = true; return c; }
-        var facades = new Material[Palette.Facades.Length];
-        for (int i = 0; i < facades.Length; i++) facades[i] = TwoSided(Gfx.Facade(Palette.Facades[i]));
-        var tiled = TwoSided(Gfx.Mat(Palette.Terracotta, 0.1f));
+        int nf = Gfx.FacadeCount; var facades = new Material[nf > 0 ? nf : Palette.Facades.Length];
+        for (int i = 0; i < facades.Length; i++) facades[i] = TwoSided(nf > 0 ? Gfx.FacadeTone(i) : Gfx.Facade(Palette.Facades[i]));
+        // churches: tall Gothic ones (Týn, St Vitus) are dark weathered stone under slate; the rest light plaster
+        var churchDark = TwoSided(Gfx.Pbr("Wall", 0.08f, 1f / 8f, new Color(0.40f, 0.38f, 0.36f))); // wall UV: 3.2 m per unit
+        var churchLight = TwoSided(Gfx.Pbr("Wall", 0.08f, 1f / 8f, new Color(0.93f, 0.90f, 0.83f)));
+        var tiled = TwoSided(Gfx.Pbr("Roof", 0.15f, 2f, Color.white));
+        var slate = TwoSided(Gfx.Pbr("Roof", 0.2f, 2.01f, new Color(0.33f, 0.34f, 0.36f))); // roof UV: 4 m per unit; ~2 m of tiles per texture
         var flat = TwoSided(Gfx.Mat(Color.Lerp(Palette.Slate, Palette.Plinth, 0.5f), 0.1f));
         var tiles = new Dictionary<Vector2Int, MeshBuilder>();
+        // collision from the same buildings' ground outlines (IprFootprints: Tools/fetch_ipr3d.py footprints): OSM outlines
+        // missed or undersized ~1 in 6 of the buildings you see, so you walked through them
+        var foot = LoadFootprints(); var coll = new Dictionary<Vector2Int, MeshBuilder>(); var cmat = Gfx.Mat(Color.white, 0f);
         const float Q = 0.05f;
         var pts = new Vector3[3]; var uvs = new Vector2[3];
         int count = r.ReadInt32();
@@ -375,17 +444,42 @@ public static class MapBuilder
             for (int i = 0; i < q.Length; i++) q[i] = r.ReadInt16();
             // stand on our terrain: the lowest ground under the building's extremes (the data's own heights use another datum)
             float minX = 0, maxX = 0, minZ = 0, maxZ = 0;
-            for (int i = 0; i < q.Length; i += 3) { minX = Mathf.Min(minX, q[i]); maxX = Mathf.Max(maxX, q[i]); minZ = Mathf.Min(minZ, q[i + 2]); maxZ = Mathf.Max(maxZ, q[i + 2]); }
+            float maxY = 0;
+            for (int i = 0; i < q.Length; i += 3) { minX = Mathf.Min(minX, q[i]); maxX = Mathf.Max(maxX, q[i]); minZ = Mathf.Min(minZ, q[i + 2]); maxZ = Mathf.Max(maxZ, q[i + 2]); maxY = Mathf.Max(maxY, q[i + 1]); }
             float ground = Mathf.Min(Mathf.Min(Height(ox, oz), Height(ox + minX * Q, oz + minZ * Q)), Mathf.Min(Height(ox + maxX * Q, oz + maxZ * Q),
                            Mathf.Min(Height(ox + minX * Q, oz + maxZ * Q), Height(ox + maxX * Q, oz + minZ * Q))));
             if (Height(ox, oz) < -0.5f) continue; // in the river
             float y0 = ground - 0.3f;
             Ipr.Add(new IprBuilding { id = id, use = use, floors = floors, access = access, at = new Vector3(ox, ground, oz),
                 r = Mathf.Max(Mathf.Max(-minX, maxX), Mathf.Max(-minZ, maxZ)) * Q });
-            if (Covered(ox, oz)) continue; // the photoreal mesh shows it already (still known to the game for Q and buying)
             var key = new Vector2Int(Mathf.FloorToInt(ox / 300f), Mathf.FloorToInt(oz / 300f));
+            if (foot != null && foot.TryGetValue(id, out var rings))
+            {
+                if (!coll.TryGetValue(key, out var cb)) coll[key] = cb = new MeshBuilder();
+                float top = y0 + Mathf.Max(3f, maxY * Q);
+                for (int ri = 0; ri < rings.Count; ri++)
+                {
+                    var rg = rings[ri]; var ring = new Vector3[rg.Length]; float area = 0;
+                    for (int i = 0; i < rg.Length; i++) { ring[i] = new Vector3(rg[i].x, top, rg[i].y); int k2 = (i + 1) % rg.Length; area += rg[i].x * rg[k2].y - rg[k2].x * rg[i].y; }
+                    float sgn = Mathf.Sign(area);
+                    Walls(cb, cmat, ring, sgn, y0 - 1f, top); Walls(cb, cmat, ring, -sgn, y0 - 1f, top); // both faces: no side lets you in
+                    if (ri == 0) foreach (var tri in Triangulate(ring, sgn)) cb.Poly(cmat, tri, null, Vector3.up); // roof: PlacesToDoors looks for it
+                }
+            }
+            if (Covered(ox, oz)) continue; // the photoreal mesh shows it already (still known to the game for Q and buying)
             if (!tiles.TryGetValue(key, out var mb)) tiles[key] = mb = new MeshBuilder();
-            var facade = facades[(id * 7) % facades.Length];
+            bool gothic = use == "církev" && maxY * Q > 40f;
+            var facade = use == "církev" ? (gothic ? churchDark : churchLight) : facades[(id * 7) % facades.Length]; // a church is not a tenement
+            var roofM = gothic ? slate : tiled;
+            // window rows from the register's floor count: old houses have 4-5 m storeys, not a fixed 3.4 m
+            float wallTop = 0;
+            for (int t = 0; t < nt; t++)
+            {
+                int o = t * 9; var a = new Vector3(q[o], q[o + 1], q[o + 2]); var b = new Vector3(q[o + 3], q[o + 4], q[o + 5]); var c = new Vector3(q[o + 6], q[o + 7], q[o + 8]);
+                var nn = Vector3.Cross(b - a, c - a); if (nn.sqrMagnitude < 1f || Mathf.Abs(nn.normalized.y) > 0.35f) continue;
+                wallTop = Mathf.Max(wallTop, Mathf.Max(a.y, Mathf.Max(b.y, c.y)));
+            }
+            float storey = floors > 0 && wallTop > 0 ? Mathf.Clamp(wallTop * Q / floors, 2.8f, 5.5f) : 3.4f;
             for (int t = 0; t < nt; t++)
             {
                 for (int i = 0; i < 3; i++) { int o = t * 9 + i * 3; pts[i] = new Vector3(ox + q[o] * Q, y0 + q[o + 1] * Q, oz + q[o + 2] * Q); }
@@ -401,17 +495,19 @@ public static class MapBuilder
                 }
                 Material m;
                 if (n.y > 0.97f) { m = flat; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
-                else if (n.y > 0.35f) { m = tiled; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
+                else if (n.y > 0.35f) { m = roofM; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
                 else
                 {
                     m = facade; var side = new Vector3(-n.z, 0, n.x).normalized; // windows: 3.2 m wide, one floor 3.4 m high
-                    for (int i = 0; i < 3; i++) uvs[i] = new Vector2(Vector3.Dot(pts[i], side) / 3.2f, (pts[i].y - y0) / 3.4f);
+                    for (int i = 0; i < 3; i++) uvs[i] = new Vector2(Vector3.Dot(pts[i], side) / 3.2f, (pts[i].y - y0 - 0.3f) / storey);
                 }
                 mb.Poly(m, pts, uvs, n);
             }
         }
         // looks only: IPR walls hang from the roof edge (eaves, filled-in arcades), so they would narrow the streets; OSM footprints collide
         foreach (var kv in tiles) kv.Value.Build($"IprDomy_{kv.Key.x}_{kv.Key.y}", root, false);
+        foreach (var kv in coll) { var go = kv.Value.Build($"DomyIpr_{kv.Key.x}_{kv.Key.y}", root, true, false); go.GetComponent<MeshRenderer>().enabled = false; }
+        IprCollision = coll.Count > 0;
         Debug.Log($"[Mapa] IPR 3D budovy: {Ipr.Count}");
         return true;
     }
@@ -497,6 +593,7 @@ public static class MapBuilder
         }
         foreach (var kv in tiles)
         {
+            if (ipr && IprCollision) continue; // IPR outlines collide instead (OSM ones missed or cut through real buildings)
             var go = kv.Value.Build($"Domy_{kv.Key.x}_{kv.Key.y}", root, true);
             if (ipr) go.GetComponent<MeshRenderer>().enabled = false;
         }

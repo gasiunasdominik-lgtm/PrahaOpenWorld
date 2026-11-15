@@ -13,3 +13,18 @@ public class IprMeshImport : AssetPostprocessor
         ti.mipmapEnabled = true;
     }
 }
+
+// Realistic surfaces (Tools/make_textures.py): *_n are OpenGL normal maps; everything tiles and gets mipmaps
+public class SurfaceTexImport : AssetPostprocessor
+{
+    void OnPreprocessTexture()
+    {
+        if (!assetPath.Contains("Resources/Tex/")) return;
+        var ti = (TextureImporter)assetImporter;
+        if (System.IO.Path.GetFileNameWithoutExtension(assetPath).EndsWith("_n")) ti.textureType = TextureImporterType.NormalMap;
+        ti.wrapMode = UnityEngine.TextureWrapMode.Repeat;
+        ti.mipmapEnabled = true; ti.anisoLevel = 8;
+        ti.maxTextureSize = 1024;
+        ti.textureCompression = TextureImporterCompression.Compressed;
+    }
+}

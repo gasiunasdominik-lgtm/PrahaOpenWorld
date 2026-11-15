@@ -127,6 +127,33 @@ def main(out=OUT, with_attrs=True):
     print("funkce:", labels)
 
 
+FOOT_OUT = os.path.join(os.path.dirname(__file__), "..", "Assets", "Resources", "IprFootprints.bytes")
+
+
+def footprints():
+    """Ground outlines of the same buildings (the Feature Service's polygons) -> collision in the game.
+    Format FPR1: count, then per building: OBJECTID, ring count, per ring: point count, points (x, z float game metres)."""
+    out, off = [], 0
+    while True:
+        q = {"where": "1=1", "geometry": ",".join(map(str, BBOX)), "geometryType": "esriGeometryEnvelope", "inSR": 4326, "outSR": 4326,
+             "spatialRel": "esriSpatialRelIntersects", "outFields": "OBJECTID", "returnGeometry": "true", "geometryPrecision": 7,
+             "resultOffset": off, "resultRecordCount": 2000, "f": "json"}
+        d = json.loads(get(FEAT + "?" + urllib.parse.urlencode(q))); fs = d.get("features", [])
+        for f in fs:
+            rings = [[projf(x, y) for x, y in r] for r in f["geometry"].get("rings", []) if len(r) >= 4]
+            if rings: out.append((f["attributes"]["OBJECTID"], rings))
+        off += len(fs)
+        if not d.get("exceededTransferLimit") or not fs: break
+    with open(FOOT_OUT, "wb") as f:
+        f.write(b"FPR1"); f.write(struct.pack("<i", len(out)))
+        for oid, rings in out:
+            f.write(struct.pack("<ih", oid, len(rings)))
+            for r in rings:
+                f.write(struct.pack("<h", len(r)))
+                for x, z in r: f.write(struct.pack("<ff", x, z))
+    print("půdorysů:", len(out), "MB:", round(os.path.getsize(FOOT_OUT) / 1e6, 1))
+
+
 TREES = "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/stromy_b_DTM_PRO_3D_2d_wgs/FeatureServer/1/query"
 TREES_OUT = os.path.join(os.path.dirname(__file__), "..", "Assets", "Resources", "IprTrees.bytes")
 
@@ -154,6 +181,7 @@ def trees():
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["trees"]: trees()
+    elif sys.argv[1:] == ["footprints"]: footprints()
     elif sys.argv[1:] == ["bridges"]:  # Mosty3D_2020: same I3S layout, no attributes; python3 Tools/fetch_ipr3d.py bridges
         SCENE = HOST.replace("Budovy3D", "Mosty3D") + "/SceneServer/layers/0"
         main(os.path.join(os.path.dirname(OUT), "IprBridges.bytes"), with_attrs=False)

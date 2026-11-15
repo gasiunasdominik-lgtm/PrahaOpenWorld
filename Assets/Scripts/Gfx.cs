@@ -78,8 +78,44 @@ public static class Gfx
         return m;
     }
 
+    static Texture2D T(string name) => Resources.Load<Texture2D>("Tex/" + name);
+
+    // A photo surface from Resources/Tex (Tools/make_textures.py, ambientCG CC0) with its normal map; tile = texture
+    // repeats per UV unit of the mesh it goes on. Falls back to the flat colour if the textures are missing.
+    public static Material Pbr(string tex, float smooth, float tile, Color tint)
+    {
+        var t = T(tex);
+        if (t == null) return Mat(tint, smooth);
+        var m = Mat(tint, smooth, t, "pbr" + tile.ToString("0.##"));
+        m.mainTextureScale = Vector2.one * tile;
+        var n = T(tex + "_n");
+        if (n != null) { m.SetTexture("_BumpMap", n); m.EnableKeyword("_NORMALMAP"); }
+        return m;
+    }
+
+    // Facade<i> textures from Tools/make_textures.py (real Old Town tones, ground floor shopfronts / rustication)
+    public static int FacadeCount { get { int n = 0; while (n < 16 && T("Facade" + n) != null) n++; return n; } }
+    public static Material FacadeTone(int i)
+    {
+        var f = Mat(Color.white, 0.08f, T("Facade" + i), i + "facade"); // name ends in "facade": night windows light up
+        f.mainTextureScale = Vector2.one / Grid;
+        var n = T("Facade_n" + (i % 2));
+        if (n != null) { f.SetTexture("_BumpMap", n); f.EnableKeyword("_NORMALMAP"); }
+        return f;
+    }
+
     public static Material Facade(Color c)
     {
+        int idx = System.Array.IndexOf(Palette.Facades, c);
+        var ft = idx >= 0 ? T("Facade" + idx) : null;
+        if (ft != null) // our Prague facade on a plaster photo, colour baked in (a tint would also tint the white frames)
+        {
+            var f = Mat(Color.white, 0.08f, ft, idx + "facade");
+            f.mainTextureScale = Vector2.one / Grid;
+            var n = T("Facade_n" + (idx % 2));
+            if (n != null) { f.SetTexture("_BumpMap", n); f.EnableKeyword("_NORMALMAP"); }
+            return f;
+        }
         var m = Mat(c, 0.08f, WindowTex, "facade");
         m.mainTextureScale = Vector2.one / Grid; // textures hold Grid x Grid windows, so neighbours light up differently
         return m;

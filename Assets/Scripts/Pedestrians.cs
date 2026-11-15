@@ -120,7 +120,7 @@ public class Pedestrians : MonoBehaviour
                 probe = door.Value;
             }
             if (!NearestVertex(probe, out int s, out int v)) continue;
-            if (MapBuilder.StreetY[s][v] < 0.5f) continue; // not mid-river
+            if (MapBuilder.StreetY[s][v] < -1f) continue; // not mid-river
             var at = (door ?? new Vector3(MapBuilder.D.streets[s].p[2 * v], MapBuilder.StreetY[s][v], MapBuilder.D.streets[s].p[2 * v + 1])) + Vector3.up;
             if ((at - focus).sqrMagnitude < 70f * 70f && InView(at)) continue; // never pop into sight up close
             string purpose = Places.Purpose(hour);
@@ -160,7 +160,7 @@ public class Pedestrians : MonoBehaviour
             float ang = (float)rng.NextDouble() * Mathf.PI * 2f, rad = h.r * Mathf.Sqrt((float)rng.NextDouble());
             var probe = new Vector3(c.x + Mathf.Cos(ang) * rad, 0, c.y + Mathf.Sin(ang) * rad);
             if (!NearestVertex(probe, out int s, out int v)) continue;
-            if (MapBuilder.StreetY[s][v] < 0.5f) continue;
+            if (MapBuilder.StreetY[s][v] < -1f) continue;
             var at = new Vector3(MapBuilder.D.streets[s].p[2 * v], MapBuilder.StreetY[s][v], MapBuilder.D.streets[s].p[2 * v + 1]) + Vector3.up;
             if ((at - focus).sqrMagnitude > despawn * despawn * 0.8f) continue;
             if ((at - focus).sqrMagnitude < 70f * 70f && InView(at)) continue; // never pop into sight up close
@@ -308,7 +308,9 @@ public class Walker : MonoBehaviour
         var p = MapBuilder.D.streets[s].p; var y = MapBuilder.StreetY[s];
         var A = new Vector3(p[2 * a], y[a], p[2 * a + 1]); var B = new Vector3(p[2 * b], y[b], p[2 * b + 1]);
         var side3 = Vector3.Cross(Vector3.up, new Vector3(B.x - A.x, 0, B.z - A.z)).normalized * side;
-        return Vector3.Lerp(A, B, t) + side3 + Vector3.up * 0.12f;
+        var q = Vector3.Lerp(A, B, t) + side3;
+        q.y = MapBuilder.SurfaceY(s, a, b, t, q.x, q.z); // on the drawn surface: a lerp between far-apart vertices floated over dips
+        return q + Vector3.up * 0.12f;
     }
 
     void Update()
@@ -343,8 +345,7 @@ public class Walker : MonoBehaviour
                 mode = Mode.Street;
             }
             pos = transform.position + to.normalized * Mathf.Min(speed * Time.deltaTime, to.magnitude);
-            pos.y = MapBuilder.Height(pos.x, pos.z) + 0.12f;
-            if (mode == Mode.Exit) pos.y = Mathf.Max(pos.y, freeTarget.y);
+            pos.y = Ground(pos);
         }
         else
         {
@@ -441,7 +442,21 @@ public class Walker : MonoBehaviour
     {
         rb.isKinematic = true;
         transform.rotation = Quaternion.Euler(0, transform.eulerAngles.y, 0);
-        var p = transform.position; p.y = MapBuilder.Height(p.x, p.z) + 0.12f; transform.position = p;
+        var p = transform.position; p.y = Ground(p); transform.position = p;
+    }
+
+    // the walkable surface under p (terrain, street, ramp, bridge deck), not just the terrain: on a bridge that is the river bed
+    static readonly RaycastHit[] hits = new RaycastHit[8];
+    float Ground(Vector3 p)
+    {
+        float best = MapBuilder.Height(p.x, p.z);
+        int n = Physics.RaycastNonAlloc(new Vector3(p.x, p.y + 1.6f, p.z), Vector3.down, hits, 8f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < n; i++)
+        {
+            var c = hits[i].collider; if (c.attachedRigidbody != null || c.name.StartsWith("DomyIpr")) continue; // bodies, cars, roofs
+            best = Mathf.Max(best, hits[i].point.y);
+        }
+        return best + 0.12f;
     }
 
     // At a street end pick the touching street that leads closest to the destination; turn back at dead ends.
