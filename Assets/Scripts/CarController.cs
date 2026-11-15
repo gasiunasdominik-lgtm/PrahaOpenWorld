@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 public class CarController : MonoBehaviour
 {
     public float maxSpeed = 34f, motorAccel = 10f, brakeAccel = 22f, reverseMax = 9f;
-    public float grip = 9f, driftGrip = 1.6f, wheelBase = 2.6f;
+    public float grip = 9f, driftGrip = 1.6f, wheelBase = 2.6f, maxLateralAccel = 14f;
     public float springK = 32000f, damper = 3200f, restLength = 0.35f, wheelRadius = 0.34f;
     public Transform[] wheels = new Transform[4];
     public Transform camTarget, seat;
@@ -145,6 +145,9 @@ public class CarController : MonoBehaviour
         float sn = Mathf.Clamp01(Mathf.Abs(fwdSpeed) / maxSpeed);
         float steerAngle = steer * Mathf.Lerp(34f, 10f, sn) * Mathf.Deg2Rad;
         float yawRate = fwdSpeed / wheelBase * Mathf.Tan(steerAngle);
+        // cap lateral accel (~1.4 g) so high-speed steering isn't twitchy; handbrake lets the tail swing past it
+        float yawCap = maxLateralAccel / Mathf.Max(Mathf.Abs(fwdSpeed), 1f) * (handbrake ? 2f : 1f);
+        yawRate = Mathf.Clamp(yawRate, -yawCap, yawCap);
         if (handbrake) yawRate *= 1.35f;
         var av = rb.angularVelocity;
         float localYaw = Vector3.Dot(av, transform.up);
