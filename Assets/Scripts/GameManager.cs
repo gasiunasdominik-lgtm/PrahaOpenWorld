@@ -69,6 +69,7 @@ public class GameManager : MonoBehaviour
         new GameObject("MHD").AddComponent<Transit>();
         new GameObject("Zakon").AddComponent<Law>();
         new GameObject("Zakazky").AddComponent<Jobs>();
+        new GameObject("Majetek").AddComponent<Property>();
         gameObject.AddComponent<Inspect>();
         new GameObject("Holubi").AddComponent<Pigeons>();
 
@@ -107,15 +108,20 @@ public class GameManager : MonoBehaviour
         playTime = Mathf.Max(playTime, p.playTime);
         if (p.money >= 0) Jobs.I.money = p.money;
         if (p.repDistrict != null) for (int i = 0; i < p.repDistrict.Count && i < p.repScore.Count; i++) Rep.score[p.repDistrict[i]] = p.repScore[i];
+        Property.I.Load(p.flat, p.garage, p.shops);
+        if (State == GameState.Title && Property.I.Home(out var home)) player.transform.position = home; // you wake up at home
         hud.SetLandmarks(found.Count, CityBuilder.Landmarks.Length);
     }
 
     bool loaded;
+    public void Save() => SaveProgress();
     void SaveProgress()
     {
         if (live == null || !loaded) return;
         live.Save(new LiveServices.Progress { found = new List<string>(found), playTime = playTime, money = Jobs.I ? Jobs.I.money : -1,
-            repDistrict = new List<string>(Rep.score.Keys), repScore = new List<int>(Rep.score.Values) });
+            repDistrict = new List<string>(Rep.score.Keys), repScore = new List<int>(Rep.score.Values),
+            flat = Property.I ? Property.I.flat : -1, garage = Property.I ? Property.I.garage : -1,
+            shops = Property.I ? new List<int>(Property.I.shops) : new List<int>() });
     }
 
     void OnApplicationQuit() => SaveProgress();
@@ -229,7 +235,7 @@ public class GameManager : MonoBehaviour
     IEnumerator RestartCo()
     {
         // "Začít znovu" is a clean run: discoveries and the clock reset
-        found.Clear(); playTime = 0f; Jobs.I.money = 500; Rep.score.Clear();
+        found.Clear(); playTime = 0f; Jobs.I.money = 500; Rep.score.Clear(); Property.I.Clear();
         SaveProgress();
         yield return hud.FadeTo(1f, 0.3f);
         Time.timeScale = 1f;

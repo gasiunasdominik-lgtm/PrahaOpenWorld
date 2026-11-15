@@ -224,6 +224,15 @@ public class Law : MonoBehaviour
         Clear();
     }
 
+    // Going inside your flat: the police lose you, unless they are watching you right now.
+    public bool Hide()
+    {
+        if (wanted == 0 || (wanted >= 2 && unseen < 5f)) return false;
+        Clear(); return true;
+    }
+
+    public void Claim(CarController c) { owners[c] = "ty"; if (wantedCar == c) Clear(); }
+
     void Clear()
     {
         wanted = 0; why = ""; wantedCar = null; caughtT = unseen = decay = dispatchT = 0f;

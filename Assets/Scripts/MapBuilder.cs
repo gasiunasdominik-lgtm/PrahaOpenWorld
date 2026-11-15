@@ -184,7 +184,7 @@ public static class MapBuilder
     }
 
     // A building from the IPR Praha 3D model (data base © IPR Praha, CC BY 4.0): what it is used for, for gameplay.
-    public struct IprBuilding { public int id; public string use; public int floors, access; public Vector3 at; }
+    public struct IprBuilding { public int id; public string use; public int floors, access; public Vector3 at; public float r; }
     public static readonly List<IprBuilding> Ipr = new();
 
     // Real 3D buildings with their true roofs (Tools/fetch_ipr3d.py). False when the file is missing: OSM boxes are the fallback.
@@ -218,7 +218,8 @@ public static class MapBuilder
                            Mathf.Min(Height(ox + minX * Q, oz + maxZ * Q), Height(ox + maxX * Q, oz + minZ * Q))));
             if (Height(ox, oz) < -0.5f) continue; // in the river
             float y0 = ground - 0.3f;
-            Ipr.Add(new IprBuilding { id = id, use = use, floors = floors, access = access, at = new Vector3(ox, ground, oz) });
+            Ipr.Add(new IprBuilding { id = id, use = use, floors = floors, access = access, at = new Vector3(ox, ground, oz),
+                r = Mathf.Max(Mathf.Max(-minX, maxX), Mathf.Max(-minZ, maxZ)) * Q });
             var key = new Vector2Int(Mathf.FloorToInt(ox / 300f), Mathf.FloorToInt(oz / 300f));
             if (!tiles.TryGetValue(key, out var mb)) tiles[key] = mb = new MeshBuilder();
             var facade = facades[(id * 7) % facades.Length];

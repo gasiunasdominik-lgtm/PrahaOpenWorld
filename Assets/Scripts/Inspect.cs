@@ -19,8 +19,12 @@ public class Inspect : MonoBehaviour
         show = 6f;
     }
 
+    // what Q last pointed at, so [B] can buy it
+    public static float lastTime = -99f; public static MapBuilder.IprBuilding? lastBuilding; public static int lastPlace = -1;
+
     public static string Describe(Transform cam)
     {
+        lastTime = Time.time; lastBuilding = null; lastPlace = -1;
         float h = GameClock.I.hour;
         // trigger colliders included: a pedestrian's sense capsule is the easiest thing to aim at
         if (!Physics.SphereCast(cam.position, 0.6f, cam.forward, out var hit, 90f, ~0, QueryTriggerInteraction.Collide))
@@ -55,8 +59,9 @@ public class Inspect : MonoBehaviour
         {
             bool open = Places.IsOpen(best.k, h);
             string name = string.IsNullOrEmpty(best.n) ? Places.KindName(best.k) : best.n;
-            return $"<b>{name}</b> · {Places.KindName(best.k)}\nMajitel: {Names.Person(bi * 7919)} · {(open ? "otevřeno" : "zavřeno")} ({Places.Hours(best.k)})\n" +
-                   $"Posílá {Places.Item(best.k)} jiným podnikům: zakázky pro kurýra v mobilu [TAB].";
+            lastPlace = bi; bool mine = Property.I && Property.I.shops.Contains(bi);
+            return $"<b>{name}</b> · {Places.KindName(best.k)}\nMajitel: {(mine ? "ty" : Names.Person(bi * 7919))} · {(open ? "otevřeno" : "zavřeno")} ({Places.Hours(best.k)})\n" +
+                   $"Posílá {Places.Item(best.k)} jiným podnikům: zakázky pro kurýra v mobilu [TAB]." + Property.I?.Offer(null, bi);
         }
         foreach (var en in MapBuilder.D.metro.entrances)
         {
@@ -65,8 +70,11 @@ public class Inspect : MonoBehaviour
         }
         string district = CityBuilder.District(p);
         if (hit.collider.name.StartsWith("Domy") && Building(p, out var b)) // what the city's own register says (IPR Praha)
+        {
+            lastBuilding = b;
             return $"<b>{(b.use.Length > 0 ? char.ToUpper(b.use[0]) + b.use.Substring(1) : "Budova")}</b> · {district}\n" +
-                   (b.floors > 0 ? $"{b.floors} podlaží · " : "") + Access(b.access);
+                   (b.floors > 0 ? $"{b.floors} podlaží · " : "") + Access(b.access) + Property.I?.Offer(b, -1);
+        }
         return hit.collider.name.StartsWith("Domy") ? $"<b>Obytný dům</b> · {district}\nBydlí tu lidé, kteří ráno vyrážejí do práce."
              : hit.collider.name.StartsWith("Ulice") ? $"<b>Ulice</b> · {district}\nPo silnici jezdí auta, chodci chodí po krajích."
              : $"<b>{district}</b>\nNic zvláštního, aspoň zatím.";

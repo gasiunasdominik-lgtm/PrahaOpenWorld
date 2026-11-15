@@ -59,7 +59,8 @@ public static class Places
         {
             float dx = p.p[0] - near.x, dz = p.p[1] - near.z;
             if (dx * dx + dz * dz > r2 || !Fits(purpose, p.k) || !IsOpen(p.k, hour)) continue;
-            if (rng.Next(++seen) == 0) pick = p; // reservoir sampling: uniform among the matches
+            int w = Property.I && Property.I.OwnsPlace(p) ? 3 : 1; // your business draws people: the street visibly fills up
+            seen += w; if (rng.Next(seen) < w) pick = p; // weighted reservoir sampling
         }
         return pick;
     }
