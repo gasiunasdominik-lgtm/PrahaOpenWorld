@@ -192,7 +192,9 @@ public static class MapBuilder
         foreach (var b in D.buildings)
         {
             int n = b.p.Length / 2;
-            if (n < 3 || CityBuilder.KeptOut(b.p[0], b.p[1])) continue;
+            if (n < 3) continue;
+            float mx = 0, mz = 0; for (int i = 0; i < n; i++) { mx += b.p[2 * i]; mz += b.p[2 * i + 1]; }
+            if (CityBuilder.KeptOut(mx / n, mz / n)) continue; // by the footprint's middle: a corner touching a landmark must not delete a whole block
             float lo = float.MaxValue, hi = float.MinValue, area = 0;
             for (int i = 0; i < n; i++)
             {

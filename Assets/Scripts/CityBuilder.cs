@@ -21,7 +21,6 @@ public static class CityBuilder
     }
 
     public static readonly Rect2 Plateau = new(-560, 100, -330, 330);
-    public static readonly Rect2 Square = new(192, -62, 318, 62);
 
 
 
@@ -39,9 +38,11 @@ public static class CityBuilder
     // Real OSM buildings removed where a hand-made landmark model stands (or the real one would double it).
     static readonly (Vector2 c, float r)[] KeepOut =
     {
-        (new Vector2(-773, 486), 130), (new Vector2(-570, 164), 45), (new Vector2(2834, -603), 30), (new Vector2(-1166, -326), 14),
-        (new Vector2(808, 114), 28), (new Vector2(650, 56), 26),     // real Týn church, real Old Town Hall
-        (new Vector2(759, 109), 18), (new Vector2(617, 84), 18),     // where the square model puts them
+        // castle: only the real cathedral footprint and the whole-castle outline (no courtyards in the data, it would fill them solid).
+        // shortcut: castle palace wings are missing until fetch_map keeps inner rings (courtyards); then drop the outline entry.
+        (new Vector2(-774, 484), 6), (new Vector2(-769, 435), 6),
+        (new Vector2(-570, 164), 45), (new Vector2(2834, -603), 30), (new Vector2(-1166, -326), 14),
+        (new Vector2(808, 114), 28), (new Vector2(663.5f, 63.5f), 9), // real Týn church nave, real Old Town Hall tower (its wings stay real)
     };
     public static bool KeptOut(float x, float z)
     {
@@ -100,19 +101,23 @@ public static class CityBuilder
         MapBuilder.Build(root, ParkingSpots);
         // landmark models were authored around fixed anchors; move each onto its real spot and ground
         Place(root, "Hrad", BuildCastle, new Vector3(-445, PlateauH, 215), Landmarks[1].pos);
-        Place(root, "StaromestskeNamesti", BuildOldTownSquare, new Vector3(255, 0, 0), Landmarks[2].pos);
+        // Old Town Square: each piece on its own real spot (OSM footprints), not the square model as one block
+        Place(root, "TynskyChram", t => BuildOldTownSquare(t, 0), new Vector3(318, 0, 0), new Vector3(786, 0, 124)); // west front behind the Týn school
+        Place(root, "Radnice", t => BuildOldTownSquare(t, 1), new Vector3(191, 0, -29), new Vector3(663.5f, 0, 63.5f), 90f); // tower; orloj faces south
+        Place(root, "HusuvPomnik", t => BuildOldTownSquare(t, 2), new Vector3(255, 0, 0), new Vector3(700, 0, 123));
         Place(root, "SvMikulas", BuildStNicholas, new Vector3(-210, 0, -45), Landmarks[3].pos);
         Place(root, "ZizkovskaVez", BuildZizkov, new Vector3(705, 0, 240), Landmarks[4].pos);
         Place(root, "Petrin", t => BuildPetrin(t, rng), new Vector3(-450, 0, -150), Landmarks[5].pos);
         return root;
     }
 
-    static void Place(Transform root, string name, System.Action<Transform> build, Vector3 anchor, Vector3 real)
+    static void Place(Transform root, string name, System.Action<Transform> build, Vector3 anchor, Vector3 real, float yaw = 0f)
     {
         var t = new GameObject(name).transform;
         t.SetParent(root, false);
         build(t);
-        t.position = new Vector3(real.x, MapBuilder.Height(real.x, real.z), real.z) - anchor;
+        t.rotation = Quaternion.Euler(0, yaw, 0);
+        t.position = new Vector3(real.x, MapBuilder.Height(real.x, real.z), real.z) - t.rotation * anchor;
     }
 
 
@@ -196,21 +201,9 @@ public static class CityBuilder
     // ---------------------------------------------------------------- castle
     static void BuildCastle(Transform root)
     {
-        var P = Plateau; float Y = PlateauH;
+        float Y = PlateauH;
 
-        var cb = new MeshBuilder();
-        var cream = Gfx.Facade(Palette.Cornice);
-        var rngC = new System.Random(77);
-        // palace wings around the courtyards (gate in the east wing)
-        Building(cb, rngC, new Rect2(-372, 150, -342, 206), 5, cream, false, false, Y);
-        Building(cb, rngC, new Rect2(-372, 224, -342, 300), 5, cream, false, false, Y);
-        cb.Box(mStone, new Vector3(-357, Y + 13.5f, 215), new Vector3(30, 7, 18)); // gate bridge over the passage
-        cb.Box(mGold, new Vector3(-341.8f, Y + 12.5f, 215), new Vector3(0.3f, 2.5f, 6f));
-        Building(cb, rngC, new Rect2(-530, 300, -372, 318), 4, cream, true, false, Y);
-        Building(cb, rngC, new Rect2(-530, 112, -372, 130), 4, cream, true, false, Y);
-        Building(cb, rngC, new Rect2(-548, 112, -530, 318), 4, cream, false, false, Y);
-        cb.Build("PrazskyHrad", root, true);
-
+        // the palace around it is the real map's buildings (the made-up square courtyard did not match the real castle)
         // St. Vitus Cathedral
         var sv = new MeshBuilder();
         float nx0 = -490, nx1 = -405, nz0 = 196, nz1 = 228, NH = 32;
@@ -253,11 +246,12 @@ public static class CityBuilder
     }
 
     // ---------------------------------------------------------------- Old Town Square
-    static void BuildOldTownSquare(Transform root)
+    // part 0 = Týn church, 1 = Old Town Hall tower with the orloj, 2 = Jan Hus memorial (model coords, placed by Place)
+    static void BuildOldTownSquare(Transform root, int part)
     {
         var mb = new MeshBuilder();
-        mb.Ground(mCobbleLight, Square.x0, Square.z0, Square.x1, Square.z1, 0.06f, 3, 3);
-
+        if (part == 0)
+        {
         // Týn church: twin towered front facing the square (west), nave behind
         float fx0 = 318, fx1 = 326;
         mb.Wall(mGothicFacade, new Vector3(fx0, 0, -6), new Vector3(fx0, 0, 6), 0, 30, Vector3.left, 4f, 8f);
@@ -281,6 +275,9 @@ public static class CityBuilder
                 mb.Cone(mSlate, tc + new Vector3(sx, 50f, 0), 0.8f, 7f, 8);
         }
 
+        }
+        if (part == 1)
+        {
         // Old Town Hall: tower with gallery, corner turrets and the astronomical clock
         var t0 = new Vector3(191, 0, -29);
         var hall = new Rect2(186, -34, 196, -24);
@@ -302,10 +299,9 @@ public static class CityBuilder
         ClockFace(mb, new Vector3(196.12f, 4.6f, -29f), 2.4f, false);
         mb.Box(mStone, new Vector3(196.5f, 16.5f, -29f), new Vector3(1f, 2.6f, 8.5f));
         mb.Prism(mSlate, mStone, new Vector3(197.4f, 17.8f, -29f), 2f, 8.5f, 2f, 0);
-        var rngH = new System.Random(5);
-        Building(mb, rngH, new Rect2(178, -24, 196, -6), 4, mFacades[2], false, false);
-        Building(mb, rngH, new Rect2(178, -46, 196, -34), 4, mFacades[0], false, false);
-
+        }
+        if (part == 2)
+        {
         // Jan Hus memorial
         var hc = new Vector3(255, 0.06f, 0);
         mb.Box(mStone, hc + Vector3.up * 0.75f, new Vector3(14, 1.5f, 8));
@@ -319,7 +315,8 @@ public static class CityBuilder
             mb.Cylinder(mStatue, hc + new Vector3(x, 3.3f, (i % 2 == 0) ? 1.4f : -1.4f), 0.45f, 2.1f, 6, true, false, 0.3f);
             mb.Dome(mStatue, hc + new Vector3(x, 5.75f, (i % 2 == 0) ? 1.4f : -1.4f), 0.3f, 1.1f, 6, 2);
         }
-        mb.Build("StaromestskeNamesti", root, true);
+        }
+        mb.Build(root.name, root, true);
     }
 
     static void ClockFace(MeshBuilder mb, Vector3 c, float r, bool astro)
@@ -350,7 +347,7 @@ public static class CityBuilder
     static void BuildStNicholas(Transform root)
     {
         var mb = new MeshBuilder();
-        mb.Ground(mCobbleLight, -246, -81, -174, -9, 0.06f, 3, 3);
+        // the square itself comes from the real map (MPP), only the church is modelled
         var facade = Gfx.Facade(Color.Lerp(Palette.Cornice, Palette.DustyPink, 0.3f));
         var rng = new System.Random(11);
         Building(mb, rng, new Rect2(-236, -60, -200, -30), 5, facade, true, false);
