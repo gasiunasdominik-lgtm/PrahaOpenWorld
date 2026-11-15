@@ -9,6 +9,7 @@ public class Pedestrians : MonoBehaviour
     public int maxPeds = 80;
     public float spawnMin = 25f, spawnMax = 140f, despawn = 200f;
     public readonly List<Walker> live = new();
+    public readonly List<(Walker w, Vector3 p)> snap = new(); // positions once per frame: personal space reads these, not 10k transform calls
     readonly Stack<Walker> pool = new();
     readonly Dictionary<Vector2Int, List<(int street, int vtx)>> grid = new(); // street vertices by 25 m cell
     readonly System.Random rng = new(7);
@@ -43,6 +44,7 @@ public class Pedestrians : MonoBehaviour
         var gm = GameManager.I;
         if (gm == null || gm.State != GameState.Playing) return;
         Vector3 focus = gm.currentCar ? gm.currentCar.transform.position : gm.player.transform.position;
+        snap.Clear(); foreach (var w in live) snap.Add((w, w.transform.position));
         float hour = GameClock.I.hour;
 
         if ((localTimer -= Time.deltaTime) <= 0f)
@@ -228,7 +230,9 @@ public class Walker : MonoBehaviour
             if (!leader.gameObject.activeSelf) { leader = null; Pedestrians.I.Despawn(this); return; } // went in / left together
             var goal = leader.transform.position + leader.transform.right * offset;
             var stepv = Vector3.ClampMagnitude(goal - transform.position, 2.5f * Time.deltaTime);
-            var np = transform.position + stepv; np.y = Mathf.Max(MapBuilder.Height(np.x, np.z) + 0.12f, goal.y);
+            Personal(transform.position, stepv); if (down > 0f) return;
+            dodge = Vector3.MoveTowards(dodge, Vector3.zero, 0.8f * Time.deltaTime);
+            var np = transform.position + stepv + dodge * Time.deltaTime * 4f; np.y = Mathf.Max(MapBuilder.Height(np.x, np.z) + 0.12f, goal.y);
             transform.rotation = leader.transform.rotation;
             rb.MovePosition(np); transform.position = lastPos = np;
             cm.Tick(stepv / Mathf.Max(Time.deltaTime, 1e-4f), Time.deltaTime);
@@ -270,6 +274,8 @@ public class Walker : MonoBehaviour
             var away = transform.position - car.transform.position; away.y = 0;
             if (away.sqrMagnitude < 64f) dodge = Vector3.MoveTowards(dodge, away.normalized * 3.5f, 9f * Time.deltaTime);
         }
+        if (down > 0f) return; // shoved over just now
+        Personal(transform.position, pos - transform.position);
         dodge = Vector3.MoveTowards(dodge, Vector3.zero, 0.8f * Time.deltaTime);
         pos += dodge;
 
@@ -295,6 +301,46 @@ public class Walker : MonoBehaviour
         rb.AddTorque(Random.onUnitSphere * 6f, ForceMode.VelocityChange);
         carRb.linearVelocity *= 0.92f; // the hit costs the car some speed
         car.OnCrash?.Invoke(4f);
+    }
+
+    // Personal space (social-force model, Helbing & Molnár 1995): people keep ~1 m apart and, meeting head-on,
+    // both sidestep to the right. The player on foot is just another body: walking into someone pushes them, running knocks them over.
+    const float Space = 1.1f;
+    void Personal(Vector3 me, Vector3 heading)
+    {
+        heading.y = 0; var fwd = heading.sqrMagnitude > 1e-6f ? heading.normalized : transform.forward;
+        foreach (var (o, op) in Pedestrians.I.snap)
+        {
+            float dx = op.x - me.x, dz = op.z - me.z;
+            if (dx * dx + dz * dz > Space * Space) continue;
+            if (o == this || o.down > 0f || o == leader || o.leader == this || (leader && o.leader == leader)) continue;
+            var d = new Vector3(dx, 0, dz); float dist = d.magnitude;
+            if (dist < 1e-3f) continue;
+            var push = -d / dist * (Space - dist);
+            if (Vector3.Dot(fwd, d) > 0f) push += new Vector3(fwd.z, 0, -fwd.x) * (Space - dist) * 0.7f; // keep right
+            dodge += push * 3f * Time.deltaTime;
+        }
+        var gm = GameManager.I;
+        if (!gm.currentCar && gm.player)
+        {
+            var d = me - gm.player.transform.position; d.y = 0; float dist = d.magnitude;
+            var pv = gm.player.Velocity; pv.y = 0;
+            if (dist < 0.85f && dist > 1e-3f && Vector3.Dot(pv, d) > 0f) // being walked into
+            {
+                if (pv.magnitude > 6f) { Shoved(pv); return; }
+                dodge += d / dist * pv.magnitude * 1.2f * Time.deltaTime; // stumble aside, ahead of the player
+            }
+        }
+        dodge = Vector3.ClampMagnitude(dodge, 2.5f);
+    }
+
+    void Shoved(Vector3 by)
+    {
+        down = 2.5f; leader = null;
+        rb.isKinematic = false;
+        rb.AddForce(by * 0.5f + Vector3.up * 1.5f, ForceMode.VelocityChange);
+        rb.AddTorque(Random.onUnitSphere * 3f, ForceMode.VelocityChange);
+        Rep.Add(transform.position, -1); // people remember who bowls them over
     }
 
     void Stand()

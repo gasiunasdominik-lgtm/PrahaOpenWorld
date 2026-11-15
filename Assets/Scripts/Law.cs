@@ -60,7 +60,8 @@ public class Law : MonoBehaviour
     public void Crime(string what, Vector3 at, CarController car)
     {
         foreach (var c in calls) if (c.what == what && (c.at - at).sqrMagnitude < 400f) return; // already being reported
-        Walker bestW = null; Driver bestD = null; float best = 35f * 35f;
+        Rep.Add(at, -2);
+        Walker bestW = null; Driver bestD = null; float best = Rep.WitnessRange(at); best *= best;
         foreach (var w in Pedestrians.I.live)
         {
             if (w.Down) continue;

@@ -28,7 +28,7 @@ public class Jobs : MonoBehaviour
 
     void Awake()
     {
-        I = this; feed.Clear(); // statics survive play-mode restarts (no domain reload)
+        I = this; feed.Clear(); Rep.score.Clear(); // statics survive play-mode restarts (no domain reload)
         Debug.Assert(Pay(100, 10f, 100f) == 110 && Pay(100, 80f, 100f) == 100 && Pay(100, 110f, 100f) == 50 && Pay(100, 201f, 100f) == 0, "Jobs.Pay");
         var mb = new MeshBuilder();
         mb.Cylinder(Gfx.Emissive(Palette.Gold, 2f), Vector3.zero, 0.6f, 60f, 10, true, true);
@@ -67,7 +67,8 @@ public class Jobs : MonoBehaviour
         }
         if (active != null) Progress(gm, me);
 
-        gm.hud.moneyText.text = $"{money:N0} Kč".Replace(',', ' ');
+        int rep = Rep.Of(CityBuilder.District(me));
+        gm.hud.moneyText.text = $"{money:N0} Kč".Replace(',', ' ') + $"\n<size=22>POVĚST ZDE: {rep:+0;-0;0}</size>";
         gm.hud.jobText.text = active == null ? "" :
             $"{(active.stage == 0 ? "VYZVEDNI" : "DORUČ")}: {(active.stage == 0 ? active.fromName : active.toName).ToUpperInvariant()}\n" +
             $"{active.reward} KČ · ZBÝVÁ {Mmss(active.limit - (Time.time - active.started))} · {Vector3.Distance(me, Target):0} M";
@@ -109,6 +110,7 @@ public class Jobs : MonoBehaviour
             float mult = Rush(GameClock.I.hour) ? 1.5f : 1f;
             var j = new Job { kind = "taxi", giver = Names.Person(w.GetHashCode()), passenger = w, from = w.transform.position, to = w.dest,
                 fromName = "zákazník", toName = w.destName, reason = $"Potřebuju {Places.Why(w.purpose)} – {w.destName}, je to daleko." };
+            mult *= Rep.PayMult(j.from);
             j.reward = Mathf.RoundToInt((50f + 35f * j.Km) * mult / 10f) * 10; j.limit = trip / 8f + 45f;
             return j;
         }
@@ -132,6 +134,7 @@ public class Jobs : MonoBehaviour
             float mult = Rush(h) ? 1.5f : 1f;
             var j = new Job { kind = "kurýr", giver = a.n, from = ap, to = bp, fromName = a.n, toName = b.n,
                 reason = $"Pošleme {Places.Item(a.k)} do {b.n}, potřebují to hned." };
+            mult *= Rep.PayMult(j.from);
             j.reward = Mathf.RoundToInt((40f + 30f * j.Km) * mult / 10f) * 10; j.limit = trip / 7f + 40f;
             return j;
         }
@@ -176,7 +179,7 @@ public class Jobs : MonoBehaviour
         if (slow && Flat(j.to - me) < (j.kind == "taxi" ? 20f : 9f))
         {
             int pay = Pay(j.reward, t, j.limit);
-            money += pay; active = null;
+            money += pay; if (t <= j.limit) Rep.Add(j.to, 1); active = null;
             gm.hud.Toast(t <= j.limit ? $"HOTOVO: +{pay} KČ" : $"POZDĚ: JEN +{pay} KČ", Palette.Gold, 2.4f);
             GameAudio.I?.PlayAt(GameAudio.I.sting, me, 0.6f);
         }
@@ -197,4 +200,14 @@ public static class Names
         if (woman) l = l.EndsWith("ý") ? l[..^1] + "á" : l.EndsWith("ek") ? l[..^2] + "ková" : l.EndsWith("ec") ? l[..^2] + "cová" : l.EndsWith("a") ? l[..^1] + "ová" : l + "ová";
         return f + " " + l;
     }
+}
+
+// District reputation = the sum of what you did there (on-time jobs +1, crimes -2). Pays more where people trust you; where they don't, they watch you.
+public static class Rep
+{
+    public static readonly Dictionary<string, int> score = new();
+    public static int Of(string district) => score.TryGetValue(district, out int v) ? v : 0;
+    public static void Add(Vector3 at, int d) { var k = CityBuilder.District(at); score[k] = Of(k) + d; }
+    public static float PayMult(Vector3 at) => 1f + Mathf.Clamp(Of(CityBuilder.District(at)), -10, 10) * 0.03f;
+    public static float WitnessRange(Vector3 at) => 35f + Mathf.Clamp(-Of(CityBuilder.District(at)), 0, 10) * 2.5f;
 }

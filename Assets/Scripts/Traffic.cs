@@ -103,6 +103,28 @@ public class Net
             }
         }
         raw.Clear();
+        MarkMain();
+    }
+
+    // Streets in the biggest connected piece; routes aim only at these so a goal never lands on an islet.
+    public bool[] Main = new bool[0];
+    void MarkMain()
+    {
+        var comp = new int[P.Count]; for (int i = 0; i < comp.Length; i++) comp[i] = -1;
+        int bestId = -1, bestSize = 0, id = 0; var q = new Queue<int>(); var buf = new List<int>();
+        for (int r = 0; r < P.Count; r++)
+        {
+            if (comp[r] >= 0) continue; int size = 0; comp[r] = id; q.Enqueue(r);
+            while (q.Count > 0)
+            {
+                int x = q.Dequeue(); size++; buf.Clear();
+                foreach (var o in Outs(x, 1)) buf.Add(o.s);
+                foreach (var o in Outs(x, -1)) buf.Add(o.s);
+                foreach (int t in buf) if (comp[t] < 0) { comp[t] = id; q.Enqueue(t); }
+            }
+            if (size > bestSize) { bestSize = size; bestId = id; } id++;
+        }
+        Main = new bool[P.Count]; for (int i = 0; i < P.Count; i++) Main[i] = comp[i] == bestId;
     }
 
     void Put(float[] p, float[] y, float w)
@@ -120,6 +142,7 @@ public class Net
 
     static Vector2Int CellOf(float x, float z) => new(Mathf.FloorToInt(x / Cell), Mathf.FloorToInt(z / Cell));
     public int N(int s) => P[s].Length / 2;
+    static float Flat2(Vector3 d) => d.x * d.x + d.z * d.z; // ends meet in plan view; a bridge deck sits higher than the bank
     public Vector3 V(int s, int i) => new(P[s][2 * i], Y[s][i], P[s][2 * i + 1]);
 
     // Where to go from the far end of (s, dir): another polyline starting there, or (-1,0) at a dead end.
@@ -130,7 +153,7 @@ public class Net
         for (int dz = -1; dz <= 1; dz++)
             if (ends.TryGetValue(new Vector2Int(c.x + dx, c.y + dz), out var l))
                 foreach (var (t, v) in l)
-                    if (t != s && (V(t, v) - e).sqrMagnitude < 16f) scratch.Add((t, v));
+                    if (t != s && Flat2(V(t, v) - e) < 16f) scratch.Add((t, v));
         if (scratch.Count > 0)
         {
             int pick = rng.Next(scratch.Count);
@@ -148,7 +171,7 @@ public class Net
         // joins the middle of another line (e.g. a tram switch): carry on along it, either way
         if (verts.TryGetValue(c, out var mid))
             foreach (var (t, v) in mid)
-                if (t != s && v > 0 && v < N(t) - 1 && (V(t, v) - e).sqrMagnitude < 2.5f) return (t, rng.Next(2) == 0 ? 1 : -1, v);
+                if (t != s && v > 0 && v < N(t) - 1 && Flat2(V(t, v) - e) < 2.5f) return (t, rng.Next(2) == 0 ? 1 : -1, v);
         return (-1, 0, 0);
     }
 
@@ -162,10 +185,10 @@ public class Net
         for (int dz = -1; dz <= 1; dz++)
             if (ends.TryGetValue(new Vector2Int(c.x + dx, c.y + dz), out var l))
                 foreach (var (t, v) in l)
-                    if (t != s && (V(t, v) - e).sqrMagnitude < 16f) outs.Add((t, v == 0 ? 1 : -1, v));
+                    if (t != s && Flat2(V(t, v) - e) < 16f) outs.Add((t, v == 0 ? 1 : -1, v));
         if (verts.TryGetValue(c, out var mid))
             foreach (var (t, v) in mid)
-                if (t != s && v > 0 && v < N(t) - 1 && (V(t, v) - e).sqrMagnitude < 2.5f) { outs.Add((t, 1, v)); outs.Add((t, -1, v)); }
+                if (t != s && v > 0 && v < N(t) - 1 && Flat2(V(t, v) - e) < 2.5f) { outs.Add((t, 1, v)); outs.Add((t, -1, v)); }
         return outs;
     }
 
@@ -174,7 +197,7 @@ public class Net
     public List<(int s, int dir, int at)> Route(int s, int dir, Vector3 goal)
     {
         var path = new List<(int, int, int)>();
-        if (!Nearest(goal, out int gs, out _)) return path;
+        if (!Nearest(goal, out int gs, out _, true)) return path;
         var g = new Dictionary<(int, int), float> { [(s, dir)] = 0f };
         var came = new Dictionary<(int, int), ((int, int) from, int at)>();
         var open = new List<(int s, int dir)> { (s, dir) }; var closed = new HashSet<(int, int)>();
@@ -205,7 +228,7 @@ public class Net
         return path; // unreachable: empty, caller falls back
     }
 
-    public bool Nearest(Vector3 p, out int s, out int v)
+    public bool Nearest(Vector3 p, out int s, out int v, bool mainOnly = false)
     {
         s = v = -1; float best = 120f * 120f; var c = CellOf(p.x, p.z); // pedestrian squares can be ~100 m from a road
         for (int dx = -5; dx <= 5; dx++)
@@ -213,6 +236,7 @@ public class Net
             if (verts.TryGetValue(new Vector2Int(c.x + dx, c.y + dz), out var l))
                 foreach (var (ls, lv) in l)
                 {
+                    if (mainOnly && ls < Main.Length && !Main[ls]) continue;
                     float ex = P[ls][2 * lv] - p.x, ez = P[ls][2 * lv + 1] - p.z;
                     if (ex * ex + ez * ez < best) { best = ex * ex + ez * ez; s = ls; v = lv; }
                 }
@@ -249,6 +273,11 @@ public class Traffic : MonoBehaviour
 {
     public static Traffic I { get; private set; }
     public int maxCars = 28;
+
+    // Share of the peak-hour car volume, hour by hour (weekday). Shape follows the usual Prague profile in the TSK
+    // traffic yearbooks (ročenka dopravy): low at night, sharp peak 7–8, broad afternoon peak 15–17. shortcut: estimated curve, swap in counted TSK hours when we have them.
+    static readonly float[] carHours = { .14f, .09f, .07f, .07f, .12f, .3f, .65f, .97f, 1f, .85f, .78f, .78f, .8f, .82f, .88f, .96f, 1f, .97f, .85f, .66f, .5f, .42f, .33f, .22f };
+    public static float CarsPerHour(float h) { int a = (int)h % 24; return Mathf.Lerp(carHours[a], carHours[(a + 1) % 24], h - Mathf.Floor(h)); }
     public readonly Net net = new();
     public Vector3[] signals;
     readonly List<Driver> live = new(); readonly Stack<Driver> pool = new();
@@ -282,9 +311,8 @@ public class Traffic : MonoBehaviour
         BuildSignals();
 #if UNITY_EDITOR
         // self-check: a route across the centre exists and every step joins the previous street's end
-        // shortcut: road bridges are not joined to the embankments in the MPP data, so no route crosses the Vltava yet
-        net.Nearest(new Vector3(686f, 0, 80f), out int ps, out _); int pd = 1; // Old Town Square → Žižkov
-        var r = net.Route(ps, pd, new Vector3(2000f, 0, -300f));
+        net.Nearest(new Vector3(686f, 0, 80f), out int ps, out _); int pd = 1; // Old Town Square → Malá Strana, over a bridge
+        var r = net.Route(ps, pd, new Vector3(-400f, 0, 300f));
         Debug.Assert(r.Count > 0, "Net.Route found no path");
         foreach (var (rs, rd, at) in r)
         {
@@ -344,7 +372,7 @@ public class Traffic : MonoBehaviour
             bool gone = dist > 280f || d.car.IsFlipped || d.stuck > 40f;
             if (gone && (dist > 450f || !Net.InView(d.transform.position))) { d.gameObject.SetActive(false); live.RemoveAt(i); pool.Push(d); }
         }
-        int target = Mathf.RoundToInt(maxCars * Mathf.Max(0.25f, Pedestrians.Activity(GameClock.I.hour)));
+        int target = Mathf.RoundToInt(maxCars * Mathf.Max(0.12f, CarsPerHour(GameClock.I.hour)));
         if ((spawnTimer -= Time.deltaTime) <= 0f && live.Count < target && pool.Count > 0)
         {
             spawnTimer = 0.2f;
