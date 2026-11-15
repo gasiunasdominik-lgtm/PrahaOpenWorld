@@ -57,7 +57,7 @@ public static class MapBuilder
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { D = null; hm = null; lu = null; StreetY.Clear(); Ipr.Clear(); } // domain reload is off
+    static void ResetStatics() { D = null; hm = null; lu = null; StreetY.Clear(); Ipr.Clear(); MeshCover.Clear(); } // domain reload is off
 
     public static void Build(Transform root, List<(Vector3 pos, float yaw)> parking)
     {
@@ -188,6 +188,51 @@ public static class MapBuilder
     public struct IprBuilding { public int id; public string use; public int floors, access; public Vector3 at; public float r; }
     public static readonly List<IprBuilding> Ipr = new();
 
+    // Photoreal mesh tiles (IPR Praha, 5 cm/px; Tools/fetch_ipr_mesh.py), pilot of phase 8. Where one lies, it replaces the
+    // LOD2 buildings and the hand-made pieces: MeshCover holds its 5 m cells. Looks only: the OSM footprints still collide.
+    public static readonly HashSet<Vector2Int> MeshCover = new();
+    public static Vector2Int Cell5(float x, float z) => new(Mathf.FloorToInt(x / 5f), Mathf.FloorToInt(z / 5f));
+    public static bool Covered(float x, float z) => MeshCover.Contains(Cell5(x, z));
+
+    static void BuildIprMesh(Transform root)
+    {
+        MeshCover.Clear();
+        foreach (var asset in Resources.LoadAll<TextAsset>("IprMesh"))
+        {
+            var r = new System.IO.BinaryReader(new System.IO.MemoryStream(asset.bytes));
+            if (new string(r.ReadChars(4)) != "MSH1") continue;
+            float ox = r.ReadSingle(), oz = r.ReadSingle(), z0 = r.ReadSingle(); int nv = r.ReadInt32(), ni = r.ReadInt32();
+            var v = new Vector3[nv]; var uv = new Vector2[nv]; var low = new Dictionary<Vector2Int, float>();
+            for (int i = 0; i < nv; i++)
+            {
+                v[i] = new Vector3(ox + r.ReadInt16() * 0.01f, z0 + r.ReadInt16() * 0.01f, oz + r.ReadInt16() * 0.01f);
+                uv[i] = new Vector2(r.ReadUInt16() / 65535f, r.ReadUInt16() / 65535f);
+                var c = Cell5(v[i].x, v[i].z);
+                if (!low.TryGetValue(c, out var y) || v[i].y < y) low[c] = v[i].y;
+            }
+            var idx = new int[ni];
+            for (int i = 0; i < ni; i++) idx[i] = (int)r.ReadUInt32();
+            // the data's heights use another datum: shift so its ground (lowest point per cell) sits on our terrain
+            var diffs = new List<float>();
+            foreach (var kv in low)
+            {
+                float x = kv.Key.x * 5f + 2.5f, z = kv.Key.y * 5f + 2.5f, h = Height(x, z);
+                if (h > -0.5f) diffs.Add(kv.Value - h);
+                MeshCover.Add(kv.Key);
+            }
+            diffs.Sort();
+            float shift = diffs.Count > 0 ? diffs[diffs.Count / 2] - 0.13f : 0f; // 0.13: just over the street ribbons it hides
+            for (int i = 0; i < nv; i++) v[i].y -= shift;
+            var mesh = new Mesh { name = asset.name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32, vertices = v, uv = uv, triangles = idx };
+            mesh.RecalculateNormals(); mesh.RecalculateBounds();
+            var go = new GameObject("IprMesh_" + asset.name); go.transform.SetParent(root, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>(); mr.sharedMaterial = Gfx.Mat(Color.white, 0f, Resources.Load<Texture2D>("IprMesh/" + asset.name), "mesh");
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; mr.receiveShadows = false; // its photos have the shadows already
+            Debug.Log($"[Mapa] fotorealistický mesh {asset.name}: {ni / 3} trojúhelníků, posun výšky {shift:0.0} m");
+        }
+    }
+
     // Real 3D buildings with their true roofs (Tools/fetch_ipr3d.py). False when the file is missing: OSM boxes are the fallback.
     static bool BuildIpr(Transform root)
     {
@@ -221,6 +266,7 @@ public static class MapBuilder
             float y0 = ground - 0.3f;
             Ipr.Add(new IprBuilding { id = id, use = use, floors = floors, access = access, at = new Vector3(ox, ground, oz),
                 r = Mathf.Max(Mathf.Max(-minX, maxX), Mathf.Max(-minZ, maxZ)) * Q });
+            if (Covered(ox, oz)) continue; // the photoreal mesh shows it already (still known to the game for Q and buying)
             var key = new Vector2Int(Mathf.FloorToInt(ox / 300f), Mathf.FloorToInt(oz / 300f));
             if (!tiles.TryGetValue(key, out var mb)) tiles[key] = mb = new MeshBuilder();
             var facade = facades[(id * 7) % facades.Length];
@@ -277,6 +323,7 @@ public static class MapBuilder
 
     static void BuildBuildings(Transform root)
     {
+        BuildIprMesh(root);
         bool ipr = BuildIpr(root); // when true, the OSM blocks below are invisible collision only
         var facades = new Material[Palette.Facades.Length];
         for (int i = 0; i < facades.Length; i++) facades[i] = Gfx.Facade(Palette.Facades[i]);
@@ -418,7 +465,7 @@ public static class MapBuilder
                 for (int k = 0; k < n; k++)
                 {
                     float x = r.ReadSingle(), z = r.ReadSingle(), h = Mathf.Clamp(r.ReadUInt16() / 100f, 2f, 35f);
-                    float gy = Height(x, z); if (gy < -0.5f) continue;
+                    float gy = Height(x, z); if (gy < -0.5f || Covered(x, z)) continue; // the photoreal mesh has its own trees
                     var key = new Vector2Int(Mathf.FloorToInt(x / 300f), Mathf.FloorToInt(z / 300f));
                     if (!tiles.TryGetValue(key, out var tm)) tiles[key] = tm = new MeshBuilder();
                     var p = new Vector3(x, gy, z); float crown = Mathf.Clamp(h * 0.3f, 1.2f, 6f); // crowns about a third as wide as tall

@@ -102,8 +102,8 @@ public static class CityBuilder
         // Old Town Square: each piece on its own real spot (OSM footprints), not the square model as one block
         if (!real) Place(root, "TynskyChram", t => BuildOldTownSquare(t, 0), new Vector3(318, 0, 0), new Vector3(786, 0, 124)); // west front behind the Týn school
         if (!real) Place(root, "Radnice", t => BuildOldTownSquare(t, 1), new Vector3(191, 0, -29), new Vector3(663.5f, 0, 63.5f), 90f); // tower; orloj faces south
-        if (real) PlaceOrloj(root);
-        Place(root, "HusuvPomnik", t => BuildOldTownSquare(t, 2), new Vector3(255, 0, 0), new Vector3(700, 0, 123));
+        if (real && !MapBuilder.Covered(663.5f, 58f)) PlaceOrloj(root); // the photoreal tower has the real one
+        if (!MapBuilder.Covered(700f, 123f)) Place(root, "HusuvPomnik", t => BuildOldTownSquare(t, 2), new Vector3(255, 0, 0), new Vector3(700, 0, 123));
         if (!real) Place(root, "SvMikulas", BuildStNicholas, new Vector3(-210, 0, -45), Landmarks[3].pos);
         if (!real) Place(root, "ZizkovskaVez", BuildZizkov, new Vector3(705, 0, 240), Landmarks[4].pos);
         if (!real) Place(root, "Petrin", t => BuildPetrin(t, rng), new Vector3(-450, 0, -150), Landmarks[5].pos);
