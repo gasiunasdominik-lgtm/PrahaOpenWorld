@@ -1,17 +1,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// Procedurally builds a compressed, stylized Prague:
-//   Vltava runs north–south through x = 0.
-//   West bank: Malá Strana, Petřín park + lookout tower, Hradčany plateau with the castle and cathedral.
-//   East bank: Staré Město with Old Town Square (Týn church, Town Hall tower), Nové Město, Žižkov tower.
-//   Bridges: Charles Bridge (z = 0, with towers and statues) and two road bridges.
+// Builds Prague: the real city comes from MapBuilder (IPR + Metropolitan Plan + OSM data);
+// this class adds the hand-made landmark models on their real spots and owns landmarks/districts.
 public static class CityBuilder
 {
-    public const float RiverHalf = 45f;
-    public const float WaterY = -2.5f;
-    public const float WorldX = 900f, WorldZ = 780f;
-    public const float RoadW = 18f, Grid = 90f;
     public const float PlateauH = 28f;
 
     public struct Landmark
@@ -29,51 +22,34 @@ public static class CityBuilder
 
     public static readonly Rect2 Plateau = new(-560, 100, -330, 330);
     public static readonly Rect2 Square = new(192, -62, 318, 62);
-    public static readonly Rect2 PetrinPark = new(-560, -330, -345, 60);
-    public static readonly Rect2 ZizkovPark = new(640, 180, 770, 300);
 
-    static readonly Rect2[] BuildingKeepOut =
-    {
-        Square,
-        new(316, -20, 340, 20),      // Týn church
-        new(174, -46, 199, -4),      // Old Town Hall
-        ZizkovPark,
-        new(-570, 90, -322, 340),    // castle plateau + margin
-        new(-340, 196, -196, 234),   // castle ramp corridor
-        PetrinPark,
-        new(-246, -81, -174, -9),    // St. Nicholas block
-        new(-250, 196, -170, 234),   // ramp landing road
-    };
 
-    public static readonly float[] BridgeZ = { -360f, 0f, 360f };
 
+    // real positions (m from the middle of Charles Bridge) taken from OpenStreetMap
     public static readonly Landmark[] Landmarks =
     {
-        new() { name = "Karlův most",            pos = new Vector3(0, 0, 0),        radius = 42, minY = -1 },
-        new() { name = "Pražský hrad",           pos = new Vector3(-440, 28, 215),  radius = 95, minY = 20 },
-        new() { name = "Staroměstské náměstí",   pos = new Vector3(255, 0, 0),      radius = 55, minY = -1 },
-        new() { name = "Chrám sv. Mikuláše",     pos = new Vector3(-210, 0, -45),   radius = 40, minY = -1 },
-        new() { name = "Žižkovská věž",          pos = new Vector3(705, 0, 240),    radius = 55, minY = -1 },
-        new() { name = "Petřínská rozhledna",    pos = new Vector3(-450, 0, -150),  radius = 40, minY = -1 },
+        new() { name = "Karlův most",            pos = new Vector3(0, 0, 0),        radius = 60, minY = -100 },
+        new() { name = "Pražský hrad",           pos = new Vector3(-773, 0, 486),   radius = 110, minY = -100 },
+        new() { name = "Staroměstské náměstí",   pos = new Vector3(686, 0, 109),    radius = 60, minY = -100 },
+        new() { name = "Chrám sv. Mikuláše",     pos = new Vector3(-570, 0, 164),   radius = 45, minY = -100 },
+        new() { name = "Žižkovská věž",          pos = new Vector3(2834, 0, -603),  radius = 60, minY = -100 },
+        new() { name = "Petřínská rozhledna",    pos = new Vector3(-1166, 0, -326), radius = 45, minY = -100 },
     };
 
-    public static string District(Vector3 p)
+    // Real OSM buildings removed where a hand-made landmark model stands (or the real one would double it).
+    static readonly (Vector2 c, float r)[] KeepOut =
     {
-        if (Plateau.Contains(p.x, p.z) && p.y > 15) return "Hradčany";
-        if (Mathf.Abs(p.x) < RiverHalf + 1)
-        {
-            if (Mathf.Abs(p.z) < 7) return "Karlův most";
-            if (Mathf.Abs(p.z - 360) < 11) return "Mánesův most";
-            if (Mathf.Abs(p.z + 360) < 11) return "Most Legií";
-            return "Vltava";
-        }
-        if (PetrinPark.Contains(p.x, p.z)) return "Petřín";
-        if (p.x < 0) return "Malá Strana";
-        if (Square.Contains(p.x, p.z)) return "Staroměstské náměstí";
-        if (p.x > 560) return "Žižkov";
-        if (p.z < -100) return "Nové Město";
-        return "Staré Město";
+        (new Vector2(-773, 486), 130), (new Vector2(-570, 164), 45), (new Vector2(2834, -603), 30), (new Vector2(-1166, -326), 14),
+        (new Vector2(808, 114), 28), (new Vector2(650, 56), 26),     // real Týn church, real Old Town Hall
+        (new Vector2(759, 109), 18), (new Vector2(617, 84), 18),     // where the square model puts them
+    };
+    public static bool KeptOut(float x, float z)
+    {
+        foreach (var (c, r) in KeepOut) if ((new Vector2(x, z) - c).sqrMagnitude < r * r) return true;
+        return false;
     }
+
+    public static string District(Vector3 p) => MapBuilder.District(p);
 
     // Materials
     static Material mCobble, mCobbleLight, mCobbleDark, mRoad, mAsphalt, mWater, mGrass, mStone, mSlate,
@@ -121,216 +97,32 @@ public static class CityBuilder
         var rng = new System.Random(seed);
         var root = new GameObject("Praha").transform;
 
-        BuildGroundAndRiver(root);
-        BuildRoads(root);
-        BuildBlocks(root, rng);
-        BuildBridges(root);
-        BuildCastle(root);
-        BuildOldTownSquare(root);
-        BuildStNicholas(root);
-        BuildZizkov(root);
-        BuildPetrin(root, rng);
-        BuildTrees(root, rng);
-        BuildHorizon(root);
+        MapBuilder.Build(root, ParkingSpots);
+        // landmark models were authored around fixed anchors; move each onto its real spot and ground
+        Place(root, "Hrad", BuildCastle, new Vector3(-445, PlateauH, 215), Landmarks[1].pos);
+        Place(root, "StaromestskeNamesti", BuildOldTownSquare, new Vector3(255, 0, 0), Landmarks[2].pos);
+        Place(root, "SvMikulas", BuildStNicholas, new Vector3(-210, 0, -45), Landmarks[3].pos);
+        Place(root, "ZizkovskaVez", BuildZizkov, new Vector3(705, 0, 240), Landmarks[4].pos);
+        Place(root, "Petrin", t => BuildPetrin(t, rng), new Vector3(-450, 0, -150), Landmarks[5].pos);
         return root;
     }
 
-    static void BoxCol(Transform parent, Vector3 center, Vector3 size, string name = "Col")
+    static void Place(Transform root, string name, System.Action<Transform> build, Vector3 anchor, Vector3 real)
     {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        go.transform.position = center;
-        go.isStatic = true;
-        go.AddComponent<BoxCollider>().size = size;
+        var t = new GameObject(name).transform;
+        t.SetParent(root, false);
+        build(t);
+        t.position = new Vector3(real.x, MapBuilder.Height(real.x, real.z), real.z) - anchor;
     }
 
-    // ---------------------------------------------------------------- ground & river
-    static void BuildGroundAndRiver(Transform root)
-    {
-        var mb = new MeshBuilder();
-        mb.Ground(mCobble, -WorldX, -WorldZ, -RiverHalf, WorldZ, 0, 3, 3);
-        mb.Ground(mCobble, RiverHalf, -WorldZ, WorldX, WorldZ, 0, 3, 3);
-        // embankment walls
-        mb.Poly(mStone, new[] { new Vector3(-RiverHalf, -5, -WorldZ), new Vector3(-RiverHalf, 0, -WorldZ),
-            new Vector3(-RiverHalf, 0, WorldZ), new Vector3(-RiverHalf, -5, WorldZ) }, null, Vector3.right);
-        mb.Poly(mStone, new[] { new Vector3(RiverHalf, -5, -WorldZ), new Vector3(RiverHalf, 0, -WorldZ),
-            new Vector3(RiverHalf, 0, WorldZ), new Vector3(RiverHalf, -5, WorldZ) }, null, Vector3.left);
-        // parks
-        mb.Ground(mGrass, PetrinPark.x0, PetrinPark.z0, PetrinPark.x1, PetrinPark.z1, 0.04f, 1, 1);
-        mb.Ground(mGrass, ZizkovPark.x0, ZizkovPark.z0, ZizkovPark.x1, ZizkovPark.z1, 0.04f, 1, 1);
-        mb.Build("Ground", root, false);
 
-        var water = new MeshBuilder();
-        water.Ground(mWater, -RiverHalf, -WorldZ - 400, RiverHalf, WorldZ + 400, WaterY, 10, 10);
-        water.Build("Vltava", root, false, false);
 
-        // colliders: banks, river bed, world bounds
-        BoxCol(root, new Vector3(-(WorldX + RiverHalf) / 2, -5, 0), new Vector3(WorldX - RiverHalf, 10, WorldZ * 2), "BankWest");
-        BoxCol(root, new Vector3((WorldX + RiverHalf) / 2, -5, 0), new Vector3(WorldX - RiverHalf, 10, WorldZ * 2), "BankEast");
-        BoxCol(root, new Vector3(0, -9, 0), new Vector3(RiverHalf * 2, 10, WorldZ * 2), "RiverBed");
-        BoxCol(root, new Vector3(-WorldX - 5, 30, 0), new Vector3(10, 120, WorldZ * 2), "Bound");
-        BoxCol(root, new Vector3(WorldX + 5, 30, 0), new Vector3(10, 120, WorldZ * 2), "Bound");
-        BoxCol(root, new Vector3(0, 30, -WorldZ - 5), new Vector3(WorldX * 2, 120, 10), "Bound");
-        BoxCol(root, new Vector3(0, 30, WorldZ + 5), new Vector3(WorldX * 2, 120, 10), "Bound");
 
-        // river parapets with gaps at the bridges
-        var par = new MeshBuilder();
-        foreach (float side in new[] { -1f, 1f })
-        {
-            float z = -WorldZ;
-            var gaps = new List<(float a, float b)>();
-            foreach (float bz in BridgeZ) { float hw = (bz == 0 ? 5f : 9f) + 0.4f; gaps.Add((bz - hw, bz + hw)); }
-            gaps.Sort((p, q) => p.a.CompareTo(q.a));
-            foreach (var g in gaps)
-            {
-                Parapet(par, side * (RiverHalf + 0.3f), z, g.a);
-                z = g.b;
-            }
-            Parapet(par, side * (RiverHalf + 0.3f), z, WorldZ);
-        }
-        par.Build("Parapets", root, true);
-    }
 
-    static void Parapet(MeshBuilder mb, float x, float z0, float z1)
-    {
-        if (z1 - z0 < 0.5f) return;
-        mb.Box(mStone, new Vector3(x, 0.55f, (z0 + z1) / 2), new Vector3(0.6f, 1.1f, z1 - z0));
-    }
 
-    // ---------------------------------------------------------------- roads
-    public static List<float> RoadXs()
-    {
-        var xs = new List<float>();
-        for (int k = 0; k < 10; k++) { xs.Add(75 + Grid * k); xs.Add(-75 - Grid * k); }
-        xs.Sort();
-        return xs;
-    }
 
-    public static List<float> RoadZs()
-    {
-        var zs = new List<float>();
-        for (int k = 0; k <= 16; k++) zs.Add(-720 + Grid * k);
-        return zs;
-    }
 
-    static bool RoadBlocked(float x, float z) => Plateau.Contains(x, z);
 
-    static void BuildRoads(Transform root)
-    {
-        var xs = RoadXs(); var zs = RoadZs();
-        var mb = new MeshBuilder();
-        float h = RoadW / 2, y = 0.08f;
-        foreach (float x in xs)
-        {
-            for (int j = 0; j < zs.Count; j++)
-            {
-                float z = zs[j];
-                if (!RoadBlocked(x, z) && !Square.Contains(x, z))
-                    mb.Ground(mAsphalt, x - h, z - h, x + h, z + h, y, 18, 18);
-                if (j + 1 < zs.Count)
-                {
-                    float za = z + h, zb = zs[j + 1] - h, zc = (za + zb) / 2;
-                    if (!RoadBlocked(x, zc) && !Square.Contains(x, zc))
-                    {
-                        mb.Ground(mRoad, x - h, za, x + h, zb, y, 18, 18);
-                        AddParking(x, za, zb, true);
-                    }
-                }
-            }
-        }
-        foreach (float z in zs)
-        {
-            for (int i = 0; i + 1 < xs.Count; i++)
-            {
-                float xa = xs[i] + h, xb = xs[i + 1] - h, xc = (xa + xb) / 2;
-                if (xa < 0 && xb > 0) continue; // the river
-                if (RoadBlocked(xc, z) || Square.Contains(xc, z)) continue;
-                mb.Ground(mRoad, xa, z - h, xb, z + h, y, 18, 18, true);
-                AddParking(z, xa, xb, false);
-            }
-        }
-        // road bridge approaches across the promenades
-        foreach (float bz in BridgeZ)
-        {
-            var m = bz == 0 ? mCobbleDark : mRoad;
-            float hw = bz == 0 ? 5f : 9f;
-            mb.Ground(m, RiverHalf, bz - hw, 66, bz + hw, y, 18, 18, true);
-            mb.Ground(m, -66, bz - hw, -RiverHalf, bz + hw, y, 18, 18, true);
-        }
-        // ramp landing towards the castle
-        mb.Ground(mAsphalt, -205, 206, -174, 224, y, 18, 18);
-        mb.Build("Roads", root, false, false);
-    }
-
-    static int parkCounter;
-    static void AddParking(float along, float a, float b, bool roadAlongZ)
-    {
-        parkCounter++;
-        if (parkCounter % 7 != 0) return;
-        float t = Mathf.Lerp(a + 12, b - 12, (parkCounter * 0.37f) % 1f);
-        float side = (parkCounter % 2 == 0) ? 1 : -1;
-        if (roadAlongZ) ParkingSpots.Add((new Vector3(along + side * 6.2f, 0.2f, t), side > 0 ? 0 : 180));
-        else ParkingSpots.Add((new Vector3(t, 0.2f, along + side * 6.2f), side > 0 ? 270 : 90));
-    }
-
-    // ---------------------------------------------------------------- city blocks
-    static void BuildBlocks(Transform root, System.Random rng)
-    {
-        var xs = RoadXs(); var zs = RoadZs();
-        var blocksRoot = new GameObject("Bloky").transform;
-        blocksRoot.SetParent(root, false);
-        var xEdges = new List<float>(xs);
-        xEdges.Insert(0, -WorldX + 9); xEdges.Add(WorldX - 9);
-        var zEdges = new List<float>(zs);
-        zEdges.Insert(0, -WorldZ + 9); zEdges.Add(WorldZ - 9);
-        float h = RoadW / 2;
-        for (int i = 0; i + 1 < xEdges.Count; i++)
-        for (int j = 0; j + 1 < zEdges.Count; j++)
-        {
-            float x0 = xEdges[i] + h, x1 = xEdges[i + 1] - h, z0 = zEdges[j] + h, z1 = zEdges[j + 1] - h;
-            if (x0 < 0 && x1 > 0) continue; // river strip
-            if (x1 - x0 < 20 || z1 - z0 < 20) continue;
-            var mb = new MeshBuilder();
-            bool oldTown = x0 > 0 && x0 < 500 && Mathf.Abs(z0) < 400;
-            Block(mb, x0, z0, x1, z1, rng, oldTown);
-            if (mb.VertexCount > 0) mb.Build($"Blok_{i}_{j}", blocksRoot, true);
-        }
-    }
-
-    static void Block(MeshBuilder mb, float x0, float z0, float x1, float z1, System.Random rng, bool oldTown)
-    {
-        const float inset = 2.5f;
-        float ax0 = x0 + inset, ax1 = x1 - inset, az0 = z0 + inset, az1 = z1 - inset;
-        float D = 12f + (float)rng.NextDouble() * 3f;
-        // south & north rows run along X
-        Row(mb, rng, oldTown, ax0, ax1, az0, az0 + D, true, -1);
-        Row(mb, rng, oldTown, ax0, ax1, az1 - D, az1, true, +1);
-        // west & east rows run along Z (between the north/south rows)
-        Row(mb, rng, oldTown, az0 + D, az1 - D, ax0, ax0 + D, false, -1);
-        Row(mb, rng, oldTown, az0 + D, az1 - D, ax1 - D, ax1, false, +1);
-    }
-
-    // along = a..b on the row axis; across = c..d on the depth axis.
-    static void Row(MeshBuilder mb, System.Random rng, bool oldTown, float a, float b, float c, float d, bool alongX, int outwardSign)
-    {
-        float t = a;
-        while (b - t > 6f)
-        {
-            float w = 10f + (float)rng.NextDouble() * 8f;
-            if (b - (t + w) < 9f) w = b - t;
-            Rect2 r = alongX ? new Rect2(t, c, t + w, d) : new Rect2(c, t, d, t + w);
-            bool blocked = false;
-            foreach (var k in BuildingKeepOut) if (k.Overlaps(r)) { blocked = true; break; }
-            if (!blocked)
-            {
-                int floors = oldTown ? 3 + rng.Next(4) : 4 + rng.Next(4);
-                var mat = mFacades[rng.Next(mFacades.Length)];
-                bool corner = (t == a) || (t + w >= b - 0.01f);
-                Building(mb, rng, r, floors, mat, alongX, corner && rng.NextDouble() < 0.25);
-            }
-            t += w;
-        }
-    }
 
     static void Building(MeshBuilder mb, System.Random rng, Rect2 r, int floors, Material facade, bool ridgeAlongX, bool turret, float baseY = 0f)
     {
@@ -371,61 +163,8 @@ public static class CityBuilder
         }
     }
 
-    // ---------------------------------------------------------------- bridges
-    static void BuildBridges(Transform root)
-    {
-        foreach (float bz in BridgeZ)
-        {
-            bool charles = bz == 0;
-            float hw = charles ? 5f : 9f;
-            var mb = new MeshBuilder();
-            var deck = charles ? mCobbleDark : mAsphalt;
-            mb.Box(deck, new Vector3(0, -0.8f, bz), new Vector3(RiverHalf * 2, 1.6f, hw * 2), 3f);
-            if (!charles) mb.Ground(mRoad, -RiverHalf, bz - hw, RiverHalf, bz + hw, 0.02f, 18, 18, true);
-            var pierMat = charles ? mStone : mConcrete;
-            for (float x = -30; x <= 30; x += 15)
-            {
-                mb.Box(pierMat, new Vector3(x, -6.5f, bz), new Vector3(4.5f, 10f, hw * 2 + 1f), 0, false);
-                foreach (float s in new[] { -1f, 1f })
-                    mb.Box(pierMat, new Vector3(x, -5.5f, bz + s * (hw + 0.5f)), new Vector3(3.2f, 8f, 3.2f), Quaternion.Euler(0, 45, 0));
-            }
-            foreach (float s in new[] { -1f, 1f })
-            {
-                mb.Box(charles ? mStone : mConcrete, new Vector3(0, 0.55f, bz + s * (hw - 0.3f)), new Vector3(RiverHalf * 2, 1.1f, 0.6f));
-                if (!charles) continue;
-                for (int i = 0; i < 6; i++)
-                {
-                    float x = -37.5f + i * 15f;
-                    bool here = (i % 2 == 0) == (s > 0);
-                    var basePos = new Vector3(x, 1.1f, bz + s * (hw - 0.3f));
-                    if (here) Statue(mb, basePos);
-                    else Lamp(mb, basePos);
-                }
-            }
-            mb.Build(charles ? "KarluvMost" : (bz > 0 ? "ManesuvMost" : "MostLegii"), root, true);
-            if (charles)
-            {
-                BridgeTower(root, 52f, 32f, true);
-                BridgeTower(root, -52f, 26f, false);
-            }
-        }
-    }
 
-    static void Statue(MeshBuilder mb, Vector3 p)
-    {
-        mb.Box(mStone, p + Vector3.up * 0.7f, new Vector3(1.6f, 1.4f, 1.4f));
-        mb.Cylinder(mStatue, p + Vector3.up * 1.4f, 0.45f, 1.9f, 7, true, false, 0.3f);
-        mb.Dome(mStatue, p + Vector3.up * 3.45f, 0.3f, 1.2f, 7, 3);
-        mb.Dome(mStatue, p + Vector3.up * 3.45f, 0.3f, -1.0f, 7, 3);
-        mb.Cylinder(mGold, p + Vector3.up * 3.9f, 0.45f, 0.06f, 10); // halo
-    }
 
-    static void Lamp(MeshBuilder mb, Vector3 p)
-    {
-        mb.Cylinder(mStatue, p, 0.09f, 3.2f, 6);
-        mb.Box(mLampGlow, p + Vector3.up * 3.45f, new Vector3(0.45f, 0.55f, 0.45f));
-        mb.Cone(mSlate, p + Vector3.up * 3.72f, 0.42f, 0.45f, 4);
-    }
 
     static void BridgeTower(Transform root, float cx, float H, bool east)
     {
@@ -458,25 +197,6 @@ public static class CityBuilder
     static void BuildCastle(Transform root)
     {
         var P = Plateau; float Y = PlateauH;
-        var mb = new MeshBuilder();
-        // plateau: retaining walls + paved top
-        mb.Box(mStone, new Vector3((P.x0 + P.x1) / 2, Y / 2, (P.z0 + P.z1) / 2), new Vector3(P.x1 - P.x0, Y, P.z1 - P.z0), 4f, false);
-        mb.Ground(mCobbleLight, P.x0, P.z0, P.x1, P.z1, Y, 3, 3);
-        // edge parapet (gap where the ramp arrives)
-        mb.Box(mStone, new Vector3((P.x0 + P.x1) / 2, Y + 0.5f, P.z0 + 0.3f), new Vector3(P.x1 - P.x0, 1f, 0.6f));
-        mb.Box(mStone, new Vector3((P.x0 + P.x1) / 2, Y + 0.5f, P.z1 - 0.3f), new Vector3(P.x1 - P.x0, 1f, 0.6f));
-        mb.Box(mStone, new Vector3(P.x0 + 0.3f, Y + 0.5f, (P.z0 + P.z1) / 2), new Vector3(0.6f, 1f, P.z1 - P.z0));
-        mb.Box(mStone, new Vector3(P.x1 - 0.3f, Y + 0.5f, (P.z0 + 207) / 2), new Vector3(0.6f, 1f, 207 - P.z0));
-        mb.Box(mStone, new Vector3(P.x1 - 0.3f, Y + 0.5f, (223 + P.z1) / 2), new Vector3(0.6f, 1f, P.z1 - 223));
-        // ramp down to Malá Strana
-        float rx0 = P.x1, rx1 = -205f, len = Mathf.Sqrt((rx1 - rx0) * (rx1 - rx0) + Y * Y);
-        float ang = Mathf.Atan2(Y, rx1 - rx0) * Mathf.Rad2Deg;
-        var rot = Quaternion.Euler(0, 0, -ang);
-        var rc = new Vector3((rx0 + rx1) / 2, Y / 2, 215f) + rot * new Vector3(0, -0.5f, 0);
-        mb.Box(mAsphalt, rc, new Vector3(len, 1f, 14f), rot, 0f, true, true);
-        mb.Box(mStone, new Vector3((rx0 + rx1) / 2, Y / 2, 207.7f) + rot * new Vector3(0, 0.5f, 0), new Vector3(len, 1f, 0.6f), rot);
-        mb.Box(mStone, new Vector3((rx0 + rx1) / 2, Y / 2, 222.3f) + rot * new Vector3(0, 0.5f, 0), new Vector3(len, 1f, 0.6f), rot);
-        mb.Build("Hradcany", root, true);
 
         var cb = new MeshBuilder();
         var cream = Gfx.Facade(Palette.Cornice);
@@ -705,73 +425,5 @@ public static class CityBuilder
         mb.Build("PetrinskaRozhledna", root, true);
     }
 
-    // ---------------------------------------------------------------- trees
-    static void BuildTrees(Transform root, System.Random rng)
-    {
-        var mb = new MeshBuilder();
-        var cols = new GameObject("TreeColliders").transform;
-        cols.SetParent(root, false);
-        void Tree(Vector3 p, float s)
-        {
-            mb.Cylinder(mTrunk, p, 0.28f * s, 2.6f * s, 6);
-            var cc = p + Vector3.up * (3.9f * s);
-            mb.Dome(mFoliage, cc, 2.5f * s, 1.15f, 7, 3);
-            mb.Dome(mFoliage, cc, 2.5f * s, -0.6f, 7, 2);
-            BoxCol(cols, p + Vector3.up * 1.3f * s, new Vector3(0.6f * s, 2.6f * s, 0.6f * s), "Tree");
-        }
-        // riverside promenades
-        foreach (float side in new[] { -1f, 1f })
-            for (float z = -WorldZ + 10; z < WorldZ - 10; z += 14f)
-            {
-                bool nearBridge = false;
-                foreach (float bz in BridgeZ) if (Mathf.Abs(z - bz) < 22) nearBridge = true;
-                if (nearBridge) continue;
-                Tree(new Vector3(side * 57f, 0, z), 0.9f + (float)rng.NextDouble() * 0.3f);
-            }
-        // parks
-        void Scatter(Rect2 r, int count, Vector3 avoid, float avoidR)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                var p = new Vector3(Mathf.Lerp(r.x0 + 4, r.x1 - 4, (float)rng.NextDouble()), 0,
-                    Mathf.Lerp(r.z0 + 4, r.z1 - 4, (float)rng.NextDouble()));
-                if ((p - avoid).sqrMagnitude < avoidR * avoidR) continue;
-                bool onRoad = false;
-                foreach (float x in RoadXs()) if (Mathf.Abs(p.x - x) < 11) onRoad = true;
-                foreach (float z in RoadZs()) if (Mathf.Abs(p.z - z) < 11) onRoad = true;
-                if (onRoad) continue;
-                Tree(p, 0.9f + (float)rng.NextDouble() * 0.6f);
-            }
-        }
-        Scatter(PetrinPark, 260, new Vector3(-450, 0, -150), 14);
-        Scatter(ZizkovPark, 50, new Vector3(705, 0, 240), 22);
-        // Old Town Square corners
-        foreach (var p in new[] { new Vector3(205, 0, 52), new Vector3(305, 0, 52), new Vector3(225, 0, -52), new Vector3(300, 0, -52) })
-            Tree(p, 1f);
-        mb.Build("Stromy", root, false);
-    }
 
-    // ---------------------------------------------------------------- distant hills
-    static void BuildHorizon(Transform root)
-    {
-        var mb = new MeshBuilder();
-        var hill = Gfx.Mat(Color.Lerp(Palette.Grass, Palette.SkyTop, 0.3f), 0f);
-        var rng = new System.Random(3);
-        for (int i = 0; i < 40; i++)
-        {
-            float a = i / 40f * Mathf.PI * 2;
-            float r = 1250f + (float)rng.NextDouble() * 200f;
-            var p = new Vector3(Mathf.Sin(a) * r * 1.1f, -20f, Mathf.Cos(a) * r);
-            mb.Dome(hill, p, 180f + (float)rng.NextDouble() * 140f, 0.32f + (float)rng.NextDouble() * 0.2f, 10, 4);
-        }
-        var field = Gfx.Mat(Color.Lerp(Palette.Grass, Palette.SkyTop, 0.15f), 0f);
-        const float F = 2200f, y = -0.6f;
-        mb.Ground(field, -F, -F, -WorldX, F, y, 50, 50);
-        mb.Ground(field, WorldX, -F, F, F, y, 50, 50);
-        mb.Ground(field, -WorldX, WorldZ, -RiverHalf, F, y, 50, 50);
-        mb.Ground(field, RiverHalf, WorldZ, WorldX, F, y, 50, 50);
-        mb.Ground(field, -WorldX, -F, -RiverHalf, -WorldZ, y, 50, 50);
-        mb.Ground(field, RiverHalf, -F, WorldX, -WorldZ, y, 50, 50);
-        mb.Build("Horizont", root, false, false);
-    }
 }

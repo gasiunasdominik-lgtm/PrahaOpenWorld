@@ -14,8 +14,8 @@ public class CameraRig : MonoBehaviour
     public Camera mainCam, minimapCam;
     public RenderTexture minimapRT;
     public float mouseSens = 0.12f;
-    public Vector3 titleCenter = new(-120, 0, 60);
-    public float titleRadius = 300f, titleHeight = 110f, titleDegPerSec = 4.5f;
+    public Vector3 titleCenter = new(-250, 0, 180); // between Charles Bridge and the castle (real map)
+    public float titleRadius = 650f, titleHeight = 200f, titleDegPerSec = 3f;
 
     Transform follow;
     float targetRadius = 5.5f, idle, titleAngle = 200f, baseFov = 55f;

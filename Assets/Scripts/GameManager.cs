@@ -22,7 +22,7 @@ public class GameManager : MonoBehaviour
     public readonly HashSet<string> found = new();
     public float playTime;
 
-    public static readonly Vector3 SpawnPos = new(58f, 0.1f, 14f);
+    public static Vector3 SpawnPos => new(686f, MapBuilder.Height(686f, 80f) + 0.3f, 80f); // Old Town Square
     const float SpawnYaw = 270f;
     float dustTimer;
     bool transitioning;

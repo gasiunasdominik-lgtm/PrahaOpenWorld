@@ -102,6 +102,9 @@ public class Hud : MonoBehaviour
         titlePrompt = Text("Prompt", titleRoot, "STISKNI LIBOVOLNOU KLÁVESU", 24, Palette.UILight, TextAlignmentOptions.Center);
         Place(titlePrompt.rectTransform, new Vector2(0.5f, 0.25f), Vector2.zero, new Vector2(1000, 40));
         titlePrompt.characterSpacing = 18;
+        // map data licences (CC BY 4.0, ODbL) require attribution in the game
+        var credits = Text("Credits", titleRoot, "Mapa: data base © IPR Praha (CC BY 4.0) · © přispěvatelé OpenStreetMap (ODbL)", 16, Palette.UILight, TextAlignmentOptions.Center);
+        Place(credits.rectTransform, new Vector2(0.5f, 0.04f), Vector2.zero, new Vector2(1400, 30));
 
         // ---------------- pause
         pauseRoot = Rect("Pause", root, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
