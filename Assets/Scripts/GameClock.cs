@@ -36,6 +36,8 @@ public class GameClock : MonoBehaviour
         RenderSettings.ambientSkyColor = ambSky * amb; RenderSettings.ambientEquatorColor = ambEq * amb; RenderSettings.ambientGroundColor = ambGround * amb;
         RenderSettings.fogColor = fog * Mathf.Lerp(0.3f, 1f, day);
         if (sky) sky.SetFloat("_Exposure", skyExposure * Mathf.Lerp(0.2f, 1f, day));
-        Gfx.SetNightWindows((1f - day) * 1.6f);
+        // share of lit windows: everyone home in the evening, most asleep after midnight, early risers from 5:00 (odhad)
+        float awake = hour >= 22f ? 1f - (hour - 22f) * 0.3f : hour < 5f ? 0.4f - hour * 0.04f : Mathf.Min(1f, 0.2f + (hour - 5f) * 0.4f);
+        Gfx.SetNightWindows((1f - day) * awake * 0.75f); // never every room at once
     }
 }

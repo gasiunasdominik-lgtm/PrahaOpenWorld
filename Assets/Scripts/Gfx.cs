@@ -13,6 +13,7 @@ public static class Gfx
     static readonly int Smoothness = Shader.PropertyToID("_Smoothness");
     static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
 
+    public static Texture2D[] GlowLevels;
     public static Texture2D WindowTex, WindowGlowTex, CobbleTex, RoadTex, RoundedTex;
     public static Sprite RoundedSprite, CircleSprite, ArrowSprite;
 
@@ -24,7 +25,7 @@ public static class Gfx
     {
         cache.Clear();
         baseMat = null;
-        WindowTex = WindowGlowTex = CobbleTex = RoadTex = RoundedTex = null;
+        WindowTex = WindowGlowTex = CobbleTex = RoadTex = RoundedTex = null; GlowLevels = null; litLevel = -1;
         RoundedSprite = CircleSprite = ArrowSprite = null;
     }
 
@@ -80,7 +81,12 @@ public static class Gfx
         return m;
     }
 
-    public static Material Facade(Color c) => Mat(c, 0.08f, WindowTex, "facade");
+    public static Material Facade(Color c)
+    {
+        var m = Mat(c, 0.08f, WindowTex, "facade");
+        m.mainTextureScale = Vector2.one / Grid; // textures hold Grid x Grid windows, so neighbours light up differently
+        return m;
+    }
 
     static float Noise(int x, int y, int seed)
     {
@@ -102,37 +108,54 @@ public static class Gfx
 
     // One window cell (3.2 m x 3.4 m). White wall so the material tint gives the facade color.
     // Emission mask matching the glass panes of WindowTex: lit windows at night.
+    // Windows light up one by one at dusk in random order: each window in the Grid x Grid tile has its own
+    // threshold and colour (mostly warm, some cool white, a few TV blue); level L lights those below L / Levels.
+    const int Grid = 8, Levels = 6;
     static Texture2D MakeWindowGlow()
     {
         const int S = 64;
-        var t = NewTex(S, S, "WindowGlowTex");
-        var px = new Color[S * S];
-        for (int y = 0; y < S; y++)
-        for (int x = 0; x < S; x++)
+        GlowLevels = new Texture2D[Levels + 1];
+        for (int L = 0; L <= Levels; L++)
         {
-            bool glass = x >= 21 && x <= 42 && y >= 18 && y <= 48, mullion = x == 31 || x == 32 || y == 37;
-            px[y * S + x] = glass && !mullion ? Color.white : Color.black;
+            var t = NewTex(S * Grid, S * Grid, "WindowGlow" + L);
+            var px = new Color[S * S * Grid * Grid];
+            for (int cy = 0; cy < Grid; cy++)
+            for (int cx = 0; cx < Grid; cx++)
+            {
+                float thr = Noise(cx, cy, 7), hue = Noise(cx, cy, 11);
+                if (thr * Levels >= L) continue;
+                Color c = hue < 0.8f ? new Color(1f, 0.72f, 0.38f) : hue < 0.95f ? new Color(0.95f, 0.93f, 0.85f) : new Color(0.5f, 0.62f, 0.95f);
+                c *= 0.7f + Noise(cx, cy, 13) * 0.5f;
+                for (int y = 18; y <= 48; y++)
+                for (int x = 21; x <= 42; x++)
+                    if (x != 31 && x != 32 && y != 37) px[(cy * S + y) * S * Grid + cx * S + x] = c;
+            }
+            t.SetPixels(px); t.Apply(true);
+            GlowLevels[L] = t;
         }
-        t.SetPixels(px); t.Apply();
-        return t;
+        return GlowLevels[Levels];
     }
 
-    static readonly Color WarmWindow = new(1f, 0.72f, 0.38f);
-    /// 0 = windows dark (day), 1 = all facade windows glow (night).
-    public static void SetNightWindows(float k)
+    static int litLevel = -1;
+    /// lit: 0 = all windows dark, 1 = all lit. Swaps the emission map only when the level changes.
+    public static void SetNightWindows(float lit)
     {
+        int L = Mathf.Clamp(Mathf.RoundToInt(lit * Levels), 0, Levels);
+        if (L == litLevel || GlowLevels == null) return;
+        litLevel = L;
         foreach (var m in cache.Values)
         {
             if (m == null || !m.name.EndsWith("facade")) continue;
-            if (!m.IsKeywordEnabled("_EMISSION")) { m.EnableKeyword("_EMISSION"); m.SetTexture("_EmissionMap", WindowGlowTex); }
-            m.SetColor(EmissionColor, WarmWindow * k);
+            m.EnableKeyword("_EMISSION");
+            m.SetTexture("_EmissionMap", GlowLevels[L]);
+            m.SetColor(EmissionColor, Color.white * 1.5f);
         }
     }
 
     static Texture2D MakeWindowTex()
     {
         const int S = 64;
-        var t = NewTex(S, S, "WindowTex");
+        var t = NewTex(S * Grid, S * Grid, "WindowTex");
         var px = new Color[S * S];
         Color glassTop = Color.Lerp(Palette.Glass, Palette.SkyTop, 0.35f);
         for (int y = 0; y < S; y++)
@@ -156,7 +179,9 @@ public static class Gfx
             }
             px[y * S + x] = c;
         }
-        t.SetPixels(px); t.Apply(true);
+        var big = new Color[S * S * Grid * Grid]; // the same window repeated Grid x Grid times
+        for (int y = 0; y < S * Grid; y++) for (int x = 0; x < S * Grid; x++) big[y * S * Grid + x] = px[(y % S) * S + x % S];
+        t.SetPixels(big); t.Apply(true);
         return t;
     }
 
