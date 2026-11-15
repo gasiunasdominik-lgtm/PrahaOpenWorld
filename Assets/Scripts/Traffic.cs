@@ -1,20 +1,114 @@
-using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 
 // A network of polylines joined where their ends meet (streets for cars, rails for trams).
 public class Net
 {
-    public readonly List<float[]> P = new(), Y = new(); public readonly List<float> W = new();
+    public readonly List<float[]> P = new(), Y = new(); public readonly List<float> W = new(), Len = new();
     readonly Dictionary<Vector2Int, List<(int s, int end)>> ends = new();
     readonly Dictionary<Vector2Int, List<(int s, int v)>> verts = new();
     readonly List<(int, int)> scratch = new();
     const float Cell = 25f;
 
+    readonly List<(List<Vector2> p, List<float> y, float w)> raw = new();
+
     public void Add(float[] p, float[] y, float w)
     {
         if (p.Length < 4) return;
+        var pts = new List<Vector2>(); for (int k = 0; k < p.Length; k += 2) pts.Add(new Vector2(p[k], p[k + 1]));
+        raw.Add((pts, new List<float>(y), w));
+    }
+
+    // Source lines (MPP streets, OSM rails) run through junctions instead of ending there. Make real junctions:
+    // a line end that touches another line's middle gets a vertex there, then every line is cut wherever it meets another.
+    public void Finish()
+    {
+        const float Join = 3f, Same = 2f;
+        var grid = new Dictionary<Vector2Int, List<(int l, int v)>>();
+        void Index() { grid.Clear(); for (int l = 0; l < raw.Count; l++) for (int v = 0; v < raw[l].p.Count; v++) { var c = CellOf(raw[l].p[v].x, raw[l].p[v].y); if (!grid.TryGetValue(c, out var g)) grid[c] = g = new(); g.Add((l, v)); } }
+        Index();
+        var inserts = new List<(int l, int after, Vector2 at, float y)>();
+        for (int l = 0; l < raw.Count; l++)
+            foreach (int e in new[] { 0, raw[l].p.Count - 1 })
+            {
+                var E = raw[l].p[e]; var c = CellOf(E.x, E.y); float best = Join; (int, int, Vector2, float)? pick = null;
+                for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++)
+                    if (grid.TryGetValue(new Vector2Int(c.x + dx, c.y + dz), out var g))
+                        foreach (var (o, v) in g)
+                        {
+                            if (o == l || v + 1 >= raw[o].p.Count) continue;
+                            Vector2 A = raw[o].p[v], B = raw[o].p[v + 1], ab = B - A;
+                            float t = Vector2.Dot(E - A, ab) / Mathf.Max(ab.sqrMagnitude, 1e-4f);
+                            if (t <= 0f || t >= 1f) continue;
+                            var q = A + ab * t; float d = (q - E).magnitude;
+                            if (d < best && (q - A).magnitude > Same && (q - B).magnitude > Same) { best = d; pick = (o, v, q, Mathf.Lerp(raw[o].y[v], raw[o].y[v + 1], t)); }
+                        }
+                if (pick.HasValue) inserts.Add(pick.Value);
+            }
+        // X-crossings at the same height: both lines get a vertex at the crossing point
+        var segs = new Dictionary<Vector2Int, List<(int l, int v)>>();
+        for (int l = 0; l < raw.Count; l++)
+            for (int v = 0; v + 1 < raw[l].p.Count; v++)
+            {
+                Vector2 A = raw[l].p[v], B = raw[l].p[v + 1];
+                var c0 = CellOf(Mathf.Min(A.x, B.x), Mathf.Min(A.y, B.y)); var c1 = CellOf(Mathf.Max(A.x, B.x), Mathf.Max(A.y, B.y));
+                for (int cx = c0.x; cx <= c1.x; cx++)
+                for (int cz = c0.y; cz <= c1.y; cz++)
+                { var k = new Vector2Int(cx, cz); if (!segs.TryGetValue(k, out var g)) segs[k] = g = new(); g.Add((l, v)); }
+            }
+        var tagged = new List<(int l, int after, Vector2 at, float y, float t)>();
+        foreach (var (l, after, at, y) in inserts) tagged.Add((l, after, at, y, ((at - raw[l].p[after]).magnitude)));
+        var done = new HashSet<(int, int, int, int)>();
+        foreach (var g in segs.Values)
+            for (int i = 0; i < g.Count; i++)
+            for (int j = i + 1; j < g.Count; j++)
+            {
+                var (l1, v1) = g[i]; var (l2, v2) = g[j];
+                if (l1 == l2 || !done.Add((l1, v1, l2, v2))) continue;
+                Vector2 a1 = raw[l1].p[v1], b1 = raw[l1].p[v1 + 1], a2 = raw[l2].p[v2], b2 = raw[l2].p[v2 + 1];
+                Vector2 r = b1 - a1, q = b2 - a2; float den = r.x * q.y - r.y * q.x;
+                if (Mathf.Abs(den) < 1e-4f) continue;
+                Vector2 w0 = a2 - a1; float t = (w0.x * q.y - w0.y * q.x) / den, u = (w0.x * r.y - w0.y * r.x) / den;
+                if (t <= 0f || t >= 1f || u <= 0f || u >= 1f) continue;
+                float y1 = Mathf.Lerp(raw[l1].y[v1], raw[l1].y[v1 + 1], t), y2 = Mathf.Lerp(raw[l2].y[v2], raw[l2].y[v2 + 1], u);
+                if (Mathf.Abs(y1 - y2) > 3f) continue; // bridge over a street: no junction
+                var x = a1 + r * t;
+                if ((x - a1).magnitude > Same && (x - b1).magnitude > Same) tagged.Add((l1, v1, x, y1, (x - a1).magnitude));
+                if ((x - a2).magnitude > Same && (x - b2).magnitude > Same) tagged.Add((l2, v2, x, y2, (x - a2).magnitude));
+            }
+        // back to front per line (and per segment, farthest first) so earlier indices stay valid
+        tagged.Sort((a, b) => a.l != b.l ? a.l.CompareTo(b.l) : a.after != b.after ? b.after.CompareTo(a.after) : b.t.CompareTo(a.t));
+        foreach (var (l, after, at, y, _) in tagged) { raw[l].p.Insert(after + 1, at); raw[l].y.Insert(after + 1, y); }
+        Index();
+        foreach (var (p, y, w) in raw)
+        {
+            int start = 0;
+            for (int v = 1; v < p.Count; v++)
+            {
+                bool cut = v == p.Count - 1;
+                if (!cut)
+                {
+                    var c = CellOf(p[v].x, p[v].y);
+                    for (int dx = -1; dx <= 1 && !cut; dx++)
+                    for (int dz = -1; dz <= 1 && !cut; dz++)
+                        if (grid.TryGetValue(new Vector2Int(c.x + dx, c.y + dz), out var g))
+                            foreach (var (o, ov) in g)
+                                if (!ReferenceEquals(raw[o].p, p) && (raw[o].p[ov] - p[v]).sqrMagnitude < Same * Same) { cut = true; break; }
+                }
+                if (!cut) continue;
+                var fp = new float[(v - start + 1) * 2]; var fy = new float[v - start + 1];
+                for (int k = start; k <= v; k++) { fp[2 * (k - start)] = p[k].x; fp[2 * (k - start) + 1] = p[k].y; fy[k - start] = y[k]; }
+                Put(fp, fy, w); start = v;
+            }
+        }
+        raw.Clear();
+    }
+
+    void Put(float[] p, float[] y, float w)
+    {
         int s = P.Count; P.Add(p); Y.Add(y); W.Add(w);
+        float len = 0; for (int k = 2; k < p.Length; k += 2) len += new Vector2(p[k] - p[k - 2], p[k + 1] - p[k - 1]).magnitude; Len.Add(len);
         for (int v = 0; v < p.Length / 2; v++)
         {
             var c = CellOf(p[2 * v], p[2 * v + 1]);
@@ -75,7 +169,6 @@ public class Net
         return outs;
     }
 
-    float Len(int s) { float l = 0; for (int k = 1; k < N(s); k++) l += Vector3.Distance(V(s, k - 1), V(s, k)); return l; }
 
     // A* over (street, direction) from the end of (s, dir) to the street nearest `goal`. Returns the streets to take, in order.
     public List<(int s, int dir, int at)> Route(int s, int dir, Vector3 goal)
@@ -85,7 +178,7 @@ public class Net
         var g = new Dictionary<(int, int), float> { [(s, dir)] = 0f };
         var came = new Dictionary<(int, int), ((int, int) from, int at)>();
         var open = new List<(int s, int dir)> { (s, dir) }; var closed = new HashSet<(int, int)>();
-        while (open.Count > 0 && closed.Count < 3000)
+        while (open.Count > 0 && closed.Count < 6000)
         {
             int bi = 0; float bf = float.MaxValue;
             for (int k = 0; k < open.Count; k++)
@@ -100,12 +193,13 @@ public class Net
                 path.Reverse(); return path;
             }
             closed.Add(cur);
-            foreach (var (t, d, at) in Outs(cur.s, cur.dir).ToArray())
+            foreach (var (t, d, at) in Outs(cur.s, cur.dir))
             {
                 var nx = (t, d); if (closed.Contains(nx)) continue;
-                float ng = g[cur] + Len(t);
-                if (g.TryGetValue(nx, out var old) && old <= ng) continue;
-                g[nx] = ng; came[nx] = (cur, at); if (!open.Contains(nx)) open.Add(nx);
+                float ng = g[cur] + Len[t];
+                bool known = g.TryGetValue(nx, out var old);
+                if (known && old <= ng) continue;
+                g[nx] = ng; came[nx] = (cur, at); if (!known) open.Add(nx); // known and not closed = already open
             }
         }
         return path; // unreachable: empty, caller falls back
@@ -113,9 +207,9 @@ public class Net
 
     public bool Nearest(Vector3 p, out int s, out int v)
     {
-        s = v = -1; float best = 60f * 60f; var c = CellOf(p.x, p.z);
-        for (int dx = -2; dx <= 2; dx++)
-        for (int dz = -2; dz <= 2; dz++)
+        s = v = -1; float best = 120f * 120f; var c = CellOf(p.x, p.z); // pedestrian squares can be ~100 m from a road
+        for (int dx = -5; dx <= 5; dx++)
+        for (int dz = -5; dz <= 5; dz++)
             if (verts.TryGetValue(new Vector2Int(c.x + dx, c.y + dz), out var l))
                 foreach (var (ls, lv) in l)
                 {
@@ -175,7 +269,9 @@ public class Traffic : MonoBehaviour
         I = this;
         var D = MapBuilder.D;
         for (int s = 0; s < D.streets.Length; s++)
-            if (!D.streets[s].foot && D.streets[s].w >= 8f) net.Add(D.streets[s].p, MapBuilder.StreetY[s], D.streets[s].w);
+            if (!D.streets[s].foot) net.Add( // all non-pedestrian streets: the narrow ones are what keeps the network connected
+                D.streets[s].p, MapBuilder.StreetY[s], D.streets[s].w);
+        net.Finish();
         signals = new Vector3[D.signals.Length];
         for (int i = 0; i < signals.Length; i++)
         {
@@ -183,6 +279,19 @@ public class Traffic : MonoBehaviour
             signals[i] = new Vector3(x, MapBuilder.Height(x, z), z);
         }
         BuildSignals();
+#if UNITY_EDITOR
+        // self-check: a route across the centre exists and every step joins the previous street's end
+        // shortcut: road bridges are not joined to the embankments in the MPP data, so no route crosses the Vltava yet
+        net.Nearest(new Vector3(686f, 0, 80f), out int ps, out _); int pd = 1; // Old Town Square → Žižkov
+        var r = net.Route(ps, pd, new Vector3(2000f, 0, -300f));
+        Debug.Assert(r.Count > 0, "Net.Route found no path");
+        foreach (var (rs, rd, at) in r)
+        {
+            var end = net.V(ps, pd > 0 ? net.N(ps) - 1 : 0);
+            Debug.Assert((net.V(rs, at) - end).sqrMagnitude < 16f, $"Net.Route gap at street {rs}");
+            ps = rs; pd = rd;
+        }
+#endif
     }
 
     void Start()
@@ -277,7 +386,7 @@ public class Driver : MonoBehaviour
     }
 
     // Lane width and speed limit (km/h) by the real street's width: wide = 50, others 30–40.
-    void Setup() { lane = LaneOf(net.W[s]); cruise = (police ? 50f : net.W[s] >= 20f ? 50f : net.W[s] >= 14f ? 40f : 30f) / 3.6f; }
+    void Setup() { lane = LaneOf(net.W[s]); cruise = (police ? 50f : net.W[s] >= 20f ? 50f : net.W[s] >= 14f ? 40f : net.W[s] >= 8f ? 30f : 20f) / 3.6f; } // 20 in old-town lanes
     void Plan()
     {
         if (police)

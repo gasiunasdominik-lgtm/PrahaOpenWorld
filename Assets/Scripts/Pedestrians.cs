@@ -257,9 +257,9 @@ public class Walker : MonoBehaviour
         if (car == null || car.SpeedKmh < 8f) return;
         if (car.ai && car.SpeedKmh < 25f) // a braking city car only nudges: the person jumps aside
         { var away = transform.position - car.transform.position; away.y = 0; dodge = away.normalized * 2.5f; return; }
-        if (car == GameManager.I.currentCar) Law.I.Crime("sražený chodec", transform.position, car);
         var carRb = car.GetComponent<Rigidbody>();
-        down = 4f;
+        down = 4f; // before the report, so the victim on the ground is not picked as the witness
+        if (car == GameManager.I.currentCar) Law.I.Crime("sražený chodec", transform.position, car);
         rb.isKinematic = false;
         rb.AddForce(carRb.linearVelocity * 0.9f + Vector3.up * 3.5f, ForceMode.VelocityChange);
         rb.AddTorque(Random.onUnitSphere * 6f, ForceMode.VelocityChange);

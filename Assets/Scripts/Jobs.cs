@@ -28,7 +28,8 @@ public class Jobs : MonoBehaviour
 
     void Awake()
     {
-        I = this;
+        I = this; feed.Clear(); // statics survive play-mode restarts (no domain reload)
+        Debug.Assert(Pay(100, 10f, 100f) == 110 && Pay(100, 80f, 100f) == 100 && Pay(100, 110f, 100f) == 50 && Pay(100, 201f, 100f) == 0, "Jobs.Pay");
         var mb = new MeshBuilder();
         mb.Cylinder(Gfx.Emissive(Palette.Gold, 2f), Vector3.zero, 0.6f, 60f, 10, true, true);
         beacon = mb.Build("Cil", transform, false, false).transform;
@@ -146,6 +147,11 @@ public class Jobs : MonoBehaviour
     }
 
     void Release() { if (active?.passenger) active.passenger.waiting = false; }
+    public void Drop() { Release(); active = null; }
+
+    // Full pay in time (+10 % tip when fast), half when late, nothing past twice the limit.
+    public static int Pay(int reward, float t, float limit) =>
+        t > limit * 2f ? 0 : t <= limit ? reward + (t < limit * 0.6f ? reward / 10 : 0) : reward / 2;
 
     void Progress(GameManager gm, Vector3 me)
     {
@@ -169,7 +175,7 @@ public class Jobs : MonoBehaviour
         }
         if (slow && Flat(j.to - me) < (j.kind == "taxi" ? 20f : 9f))
         {
-            int pay = t <= j.limit ? j.reward + (t < j.limit * 0.6f ? j.reward / 10 : 0) : j.reward / 2;
+            int pay = Pay(j.reward, t, j.limit);
             money += pay; active = null;
             gm.hud.Toast(t <= j.limit ? $"HOTOVO: +{pay} KČ" : $"POZDĚ: JEN +{pay} KČ", Palette.Gold, 2.4f);
             GameAudio.I?.PlayAt(GameAudio.I.sting, me, 0.6f);

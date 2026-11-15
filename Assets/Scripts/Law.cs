@@ -216,7 +216,7 @@ public class Law : MonoBehaviour
         {
             var stolen = gm.currentCar; gm.ExitCar(); stolen.gameObject.SetActive(false); // returned to the owner
         }
-        if (Jobs.I.active != null) Jobs.I.active = null;
+        Jobs.I.Drop(); // a waiting taxi customer walks on
         gm.hud.Toast($"ZADRŽEN POLICIÍ · POKUTA {fine} KČ", Palette.Accent, 3f);
         Clear();
     }

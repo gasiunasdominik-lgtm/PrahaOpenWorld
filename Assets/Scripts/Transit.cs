@@ -30,6 +30,7 @@ public class Transit : MonoBehaviour
             for (int v = 0; v < y.Length; v++) y[v] = TrackY(t.p[2 * v], t.p[2 * v + 1]);
             rails.Add(t.p, y, 0f);
         }
+        rails.Finish();
         stops = new Vector3[D.tramStops.Length]; stopNames = new string[stops.Length];
         for (int k = 0; k < stops.Length; k++)
         {
@@ -203,10 +204,8 @@ public class Tram : MonoBehaviour
     Net net; System.Random rng; int s, i, dir, lastStop = -1; float speed, dwell, bell; Vector3 front;
     const float Step = 0.5f, SecLen = 9.6f, Cruise = 11f;
 
-    public static int created;
     public static Tram Create(Transform parent, Net net, int s, int v, int dir, System.Random rng)
     {
-        created++;
         var go = new GameObject("Tramvaj"); go.transform.SetParent(parent, false);
         var t = go.AddComponent<Tram>(); t.net = net; t.rng = rng; t.s = s; t.i = v; t.dir = dir;
         var red = Gfx.Mat(new Color(0.75f, 0.09f, 0.1f), 0.5f); var cream = Gfx.Mat(new Color(0.93f, 0.88f, 0.74f), 0.4f);
