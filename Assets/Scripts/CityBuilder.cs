@@ -97,14 +97,15 @@ public static class CityBuilder
 
         MapBuilder.Build(root, ParkingSpots);
         // landmark models were authored around fixed anchors; move each onto its real spot and ground
-        Place(root, "Hrad", BuildCastle, new Vector3(-445, PlateauH, 215), Landmarks[1].pos);
+        bool real = MapBuilder.Ipr.Count > 0; // the IPR 3D model already has the real churches, towers and the castle
+        if (!real) Place(root, "Hrad", BuildCastle, new Vector3(-445, PlateauH, 215), Landmarks[1].pos);
         // Old Town Square: each piece on its own real spot (OSM footprints), not the square model as one block
-        Place(root, "TynskyChram", t => BuildOldTownSquare(t, 0), new Vector3(318, 0, 0), new Vector3(786, 0, 124)); // west front behind the Týn school
-        Place(root, "Radnice", t => BuildOldTownSquare(t, 1), new Vector3(191, 0, -29), new Vector3(663.5f, 0, 63.5f), 90f); // tower; orloj faces south
+        if (!real) Place(root, "TynskyChram", t => BuildOldTownSquare(t, 0), new Vector3(318, 0, 0), new Vector3(786, 0, 124)); // west front behind the Týn school
+        if (!real) Place(root, "Radnice", t => BuildOldTownSquare(t, 1), new Vector3(191, 0, -29), new Vector3(663.5f, 0, 63.5f), 90f); // tower; orloj faces south
         Place(root, "HusuvPomnik", t => BuildOldTownSquare(t, 2), new Vector3(255, 0, 0), new Vector3(700, 0, 123));
-        Place(root, "SvMikulas", BuildStNicholas, new Vector3(-210, 0, -45), Landmarks[3].pos);
-        Place(root, "ZizkovskaVez", BuildZizkov, new Vector3(705, 0, 240), Landmarks[4].pos);
-        Place(root, "Petrin", t => BuildPetrin(t, rng), new Vector3(-450, 0, -150), Landmarks[5].pos);
+        if (!real) Place(root, "SvMikulas", BuildStNicholas, new Vector3(-210, 0, -45), Landmarks[3].pos);
+        if (!real) Place(root, "ZizkovskaVez", BuildZizkov, new Vector3(705, 0, 240), Landmarks[4].pos);
+        if (!real) Place(root, "Petrin", t => BuildPetrin(t, rng), new Vector3(-450, 0, -150), Landmarks[5].pos);
         return root;
     }
 

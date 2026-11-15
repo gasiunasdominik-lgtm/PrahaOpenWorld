@@ -64,8 +64,32 @@ public class Inspect : MonoBehaviour
             if (dx * dx + dz * dz < 100f) return "<b>Vstup do metra</b>\n[E] u vstupu: vybereš stanici. Jízda stojí čas, ne peníze.";
         }
         string district = CityBuilder.District(p);
+        if (hit.collider.name.StartsWith("Domy") && Building(p, out var b)) // what the city's own register says (IPR Praha)
+            return $"<b>{(b.use.Length > 0 ? char.ToUpper(b.use[0]) + b.use.Substring(1) : "Budova")}</b> · {district}\n" +
+                   (b.floors > 0 ? $"{b.floors} podlaží · " : "") + Access(b.access);
         return hit.collider.name.StartsWith("Domy") ? $"<b>Obytný dům</b> · {district}\nBydlí tu lidé, kteří ráno vyrážejí do práce."
              : hit.collider.name.StartsWith("Ulice") ? $"<b>Ulice</b> · {district}\nPo silnici jezdí auta, chodci chodí po krajích."
              : $"<b>{district}</b>\nNic zvláštního, aspoň zatím.";
     }
+
+    static bool Building(Vector3 p, out MapBuilder.IprBuilding best)
+    {
+        best = default; float bd = 30f * 30f; bool found = false;
+        foreach (var b in MapBuilder.Ipr)
+        {
+            float dx = b.at.x - p.x, dz = b.at.z - p.z, d = dx * dx + dz * dz;
+            if (d < bd) { bd = d; best = b; found = true; }
+        }
+        return found;
+    }
+
+    // VEREJ_PRISTUP codes of the IPR building register
+    static string Access(int a) => a switch
+    {
+        1 => "Veřejně přístupná – můžeš dovnitř.",
+        2 => "Přístupná v otevírací době.",
+        3 => "Neveřejná – bydlí nebo pracují tu lidé.",
+        4 => "Jen pro ty, kdo tu mají co dělat.",
+        _ => "Kdo sem smí, není jasné.",
+    };
 }

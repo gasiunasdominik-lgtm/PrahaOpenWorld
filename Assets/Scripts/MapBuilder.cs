@@ -57,7 +57,7 @@ public static class MapBuilder
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { D = null; hm = null; lu = null; StreetY.Clear(); } // domain reload is off
+    static void ResetStatics() { D = null; hm = null; lu = null; StreetY.Clear(); Ipr.Clear(); } // domain reload is off
 
     public static void Build(Transform root, List<(Vector3 pos, float yaw)> parking)
     {
@@ -183,8 +183,71 @@ public static class MapBuilder
         return 6f;
     }
 
+    // A building from the IPR Praha 3D model (data base © IPR Praha, CC BY 4.0): what it is used for, for gameplay.
+    public struct IprBuilding { public int id; public string use; public int floors, access; public Vector3 at; }
+    public static readonly List<IprBuilding> Ipr = new();
+
+    // Real 3D buildings with their true roofs (Tools/fetch_ipr3d.py). False when the file is missing: OSM boxes are the fallback.
+    static bool BuildIpr(Transform root)
+    {
+        Ipr.Clear();
+        var asset = Resources.Load<TextAsset>("IprBuildings");
+        if (asset == null) return false;
+        var r = new System.IO.BinaryReader(new System.IO.MemoryStream(asset.bytes));
+        if (new string(r.ReadChars(4)) != "IPR1") return false;
+        var labels = new string[r.ReadInt32()];
+        for (int i = 0; i < labels.Length; i++) labels[i] = System.Text.Encoding.UTF8.GetString(r.ReadBytes(r.ReadByte()));
+        var facades = new Material[Palette.Facades.Length];
+        for (int i = 0; i < facades.Length; i++) facades[i] = Gfx.Facade(Palette.Facades[i]);
+        var tiled = Gfx.Mat(Palette.Terracotta, 0.1f);
+        var flat = Gfx.Mat(Color.Lerp(Palette.Slate, Palette.Plinth, 0.5f), 0.1f);
+        var tiles = new Dictionary<Vector2Int, MeshBuilder>();
+        const float Q = 0.05f;
+        var pts = new Vector3[3]; var uvs = new Vector2[3];
+        int count = r.ReadInt32();
+        for (int k = 0; k < count; k++)
+        {
+            int id = r.ReadInt32(); string use = labels[r.ReadByte()]; int floors = r.ReadByte(), access = r.ReadByte();
+            float ox = r.ReadSingle(), oz = r.ReadSingle(); r.ReadSingle(); int nt = r.ReadInt32();
+            var q = new short[nt * 9];
+            for (int i = 0; i < q.Length; i++) q[i] = r.ReadInt16();
+            // stand on our terrain: the lowest ground under the building's extremes (the data's own heights use another datum)
+            float minX = 0, maxX = 0, minZ = 0, maxZ = 0;
+            for (int i = 0; i < q.Length; i += 3) { minX = Mathf.Min(minX, q[i]); maxX = Mathf.Max(maxX, q[i]); minZ = Mathf.Min(minZ, q[i + 2]); maxZ = Mathf.Max(maxZ, q[i + 2]); }
+            float ground = Mathf.Min(Mathf.Min(Height(ox, oz), Height(ox + minX * Q, oz + minZ * Q)), Mathf.Min(Height(ox + maxX * Q, oz + maxZ * Q),
+                           Mathf.Min(Height(ox + minX * Q, oz + maxZ * Q), Height(ox + maxX * Q, oz + minZ * Q))));
+            if (Height(ox, oz) < -0.5f) continue; // in the river
+            float y0 = ground - 0.3f;
+            Ipr.Add(new IprBuilding { id = id, use = use, floors = floors, access = access, at = new Vector3(ox, ground, oz) });
+            var key = new Vector2Int(Mathf.FloorToInt(ox / 300f), Mathf.FloorToInt(oz / 300f));
+            if (!tiles.TryGetValue(key, out var mb)) tiles[key] = mb = new MeshBuilder();
+            var facade = facades[(id * 7) % facades.Length];
+            for (int t = 0; t < nt; t++)
+            {
+                for (int i = 0; i < 3; i++) { int o = t * 9 + i * 3; pts[i] = new Vector3(ox + q[o] * Q, y0 + q[o + 1] * Q, oz + q[o + 2] * Q); }
+                var n = Vector3.Cross(pts[1] - pts[0], pts[2] - pts[0]);
+                if (n.sqrMagnitude < 1e-6f) continue;
+                n.Normalize();
+                Material m;
+                if (n.y > 0.97f) { m = flat; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
+                else if (n.y > 0.35f) { m = tiled; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
+                else
+                {
+                    m = facade; var side = new Vector3(-n.z, 0, n.x).normalized; // windows: 3.2 m wide, one floor 3.4 m high
+                    for (int i = 0; i < 3; i++) uvs[i] = new Vector2(Vector3.Dot(pts[i], side) / 3.2f, (pts[i].y - y0) / 3.4f);
+                }
+                mb.Poly(m, pts, uvs, n);
+            }
+        }
+        // looks only: IPR walls hang from the roof edge (eaves, filled-in arcades), so they would narrow the streets; OSM footprints collide
+        foreach (var kv in tiles) kv.Value.Build($"IprDomy_{kv.Key.x}_{kv.Key.y}", root, false);
+        Debug.Log($"[Mapa] IPR 3D budovy: {Ipr.Count}");
+        return true;
+    }
+
     static void BuildBuildings(Transform root)
     {
+        bool ipr = BuildIpr(root); // when true, the OSM blocks below are invisible collision only
         var facades = new Material[Palette.Facades.Length];
         for (int i = 0; i < facades.Length; i++) facades[i] = Gfx.Facade(Palette.Facades[i]);
         var terracotta = Gfx.Mat(Palette.Terracotta, 0.1f);
@@ -195,7 +258,7 @@ public static class MapBuilder
             int n = b.p.Length / 2;
             if (n < 3) continue;
             float mx = 0, mz = 0; for (int i = 0; i < n; i++) { mx += b.p[2 * i]; mz += b.p[2 * i + 1]; }
-            if (CityBuilder.KeptOut(mx / n, mz / n)) continue; // by the footprint's middle: a corner touching a landmark must not delete a whole block
+            if (!ipr && CityBuilder.KeptOut(mx / n, mz / n)) continue; // by the footprint's middle: a corner touching a landmark must not delete a whole block
             float lo = float.MaxValue, hi = float.MinValue, area = 0;
             for (int i = 0; i < n; i++)
             {
@@ -230,7 +293,11 @@ public static class MapBuilder
             foreach (var tri in Triangulate(outline, sgn))
                 mb.Poly(roof, tri, new[] { Vector2.zero, Vector2.up, Vector2.one }, Vector3.up);
         }
-        foreach (var kv in tiles) kv.Value.Build($"Domy_{kv.Key.x}_{kv.Key.y}", root, true);
+        foreach (var kv in tiles)
+        {
+            var go = kv.Value.Build($"Domy_{kv.Key.x}_{kv.Key.y}", root, true);
+            if (ipr) go.GetComponent<MeshRenderer>().enabled = false;
+        }
     }
 
     static void Walls(MeshBuilder mb, Material m, Vector3[] ring, float sgn, float y0, float y1)
@@ -310,6 +377,30 @@ public static class MapBuilder
         var t = D.terrain;
         var mb = new MeshBuilder();
         var leaves = Gfx.Mat(Palette.Foliage, 0.05f); var trunk = Gfx.Mat(Palette.Trunk, 0.05f);
+        var real = Resources.Load<TextAsset>("IprTrees"); // every real tree with its measured height (DTM Praha, data base © IPR Praha)
+        if (real != null)
+        {
+            var r = new System.IO.BinaryReader(new System.IO.MemoryStream(real.bytes));
+            if (new string(r.ReadChars(4)) == "TRE1")
+            {
+                var tiles = new Dictionary<Vector2Int, MeshBuilder>();
+                int n = r.ReadInt32();
+                for (int k = 0; k < n; k++)
+                {
+                    float x = r.ReadSingle(), z = r.ReadSingle(), h = Mathf.Clamp(r.ReadUInt16() / 100f, 2f, 35f);
+                    float gy = Height(x, z); if (gy < -0.5f) continue;
+                    var key = new Vector2Int(Mathf.FloorToInt(x / 300f), Mathf.FloorToInt(z / 300f));
+                    if (!tiles.TryGetValue(key, out var tm)) tiles[key] = tm = new MeshBuilder();
+                    var p = new Vector3(x, gy, z); float crown = Mathf.Clamp(h * 0.3f, 1.2f, 6f); // crowns about a third as wide as tall
+                    tm.Cylinder(trunk, p, Mathf.Clamp(h * 0.025f, 0.15f, 0.6f), h * 0.45f, 5);
+                    var cc = p + Vector3.up * (h - crown * 1.1f);
+                    tm.Dome(leaves, cc, crown, 1.1f, 6, 2);
+                    tm.Dome(leaves, cc, crown, -0.6f, 6, 1); // underside, so a crown is not an umbrella from below
+                }
+                foreach (var kv in tiles) kv.Value.Build($"Stromy_{kv.Key.x}_{kv.Key.y}", root, false);
+                return;
+            }
+        }
         for (int j = 0; j < t.h; j++)
         for (int i = 0; i < t.w; i++)
         {
