@@ -96,7 +96,7 @@ public class CarController : MonoBehaviour
             float n = NormSpeed;
             float rpm = driven || ai ? 0.75f + n * 1.5f + Mathf.Abs(throttle) * 0.2f : 0.6f;
             engineSrc.pitch = Mathf.Lerp(engineSrc.pitch, rpm, Time.deltaTime * 5f);
-            GameAudio.I.SetBaseVolume(engineSrc, driven ? 0.35f + n * 0.35f : ai ? 0.1f + n * 0.25f : 0f);
+            GameAudio.I?.SetBaseVolume(engineSrc, driven ? 0.35f + n * 0.35f : ai ? 0.1f + n * 0.25f : 0f);
         }
     }
 

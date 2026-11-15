@@ -7,7 +7,8 @@ using UnityEngine;
 // and metro from OpenStreetMap. 1 unit = 1 m, origin = middle of Charles Bridge, y 0 = Vltava level.
 public static class MapBuilder
 {
-    [Serializable] public class Poly { public string n, k; public float w; public bool foot; public float h; public float[] p; }
+    [Serializable] public class Ring { public float[] p; }
+    [Serializable] public class Poly { public string n, k; public float w; public bool foot; public float h; public float[] p; public Ring[] holes; }
     [Serializable] public class Terrain { public float x0, z0, cell; public int w, h; public string dm, lu; }
     [Serializable] public class Line { public string @ref, color; public int[] s; }
     [Serializable] public class Metro { public float depth; public Poly[] stations, entrances; public Line[] order; }
@@ -209,17 +210,55 @@ public static class MapBuilder
             float sgn = Mathf.Sign(area); // footprint winding from OSM is arbitrary
             var ring = new Vector3[n];
             for (int i = 0; i < n; i++) ring[i] = new Vector3(b.p[2 * i], top, b.p[2 * i + 1]);
-            for (int i = 0; i < n; i++)
-            {
-                var a = ring[i]; var c = ring[(i + 1) % n];
-                var outward = sgn * new Vector3(c.z - a.z, 0, -(c.x - a.x));
-                mb.Wall(facade, a, c, lo - 1f, top, outward);
-            }
+            Walls(mb, facade, ring, sgn, lo - 1f, top);
+            var outline = ring;
+            if (b.holes != null)
+                foreach (var hole in b.holes)
+                {
+                    int hn = hole.p.Length / 2; if (hn < 3) continue;
+                    var hr = new Vector3[hn]; float ha = 0;
+                    for (int i = 0; i < hn; i++)
+                    {
+                        hr[i] = new Vector3(hole.p[2 * i], top, hole.p[2 * i + 1]);
+                        int k = (i + 1) % hn; ha += hole.p[2 * i] * hole.p[2 * k + 1] - hole.p[2 * k] * hole.p[2 * i + 1];
+                    }
+                    if (Mathf.Sign(ha) == sgn) Array.Reverse(hr); // a hole runs against the outer ring
+                    Walls(mb, facade, hr, sgn, lo - 1f, top); // reversed winding: walls face into the courtyard
+                    outline = Bridge(outline, hr);
+                }
             var roof = b.h > 24f ? flat : terracotta;
-            foreach (var tri in Triangulate(ring, sgn))
+            foreach (var tri in Triangulate(outline, sgn))
                 mb.Poly(roof, tri, new[] { Vector2.zero, Vector2.up, Vector2.one }, Vector3.up);
         }
         foreach (var kv in tiles) kv.Value.Build($"Domy_{kv.Key.x}_{kv.Key.y}", root, true);
+    }
+
+    static void Walls(MeshBuilder mb, Material m, Vector3[] ring, float sgn, float y0, float y1)
+    {
+        for (int i = 0; i < ring.Length; i++)
+        {
+            var a = ring[i]; var c = ring[(i + 1) % ring.Length];
+            mb.Wall(m, a, c, y0, y1, sgn * new Vector3(c.z - a.z, 0, -(c.x - a.x)));
+        }
+    }
+
+    // Cuts a hole into the outline along a seam from the hole's rightmost vertex to the nearest outline vertex
+    // right of it, so ear clipping sees one simple polygon. shortcut: nearest vertex, not a visibility check.
+    static Vector3[] Bridge(Vector3[] outer, Vector3[] hole)
+    {
+        int h = 0; for (int i = 1; i < hole.Length; i++) if (hole[i].x > hole[h].x) h = i;
+        int o = -1; float best = float.MaxValue;
+        for (int i = 0; i < outer.Length; i++)
+        {
+            float d = (outer[i] - hole[h]).sqrMagnitude;
+            if (outer[i].x >= hole[h].x && d < best) { best = d; o = i; }
+        }
+        if (o < 0) return outer;
+        var res = new List<Vector3>(outer.Length + hole.Length + 2);
+        for (int i = 0; i <= o; i++) res.Add(outer[i]);
+        for (int i = 0; i <= hole.Length; i++) res.Add(hole[(h + i) % hole.Length]);
+        for (int i = o; i < outer.Length; i++) res.Add(outer[i]);
+        return res.ToArray();
     }
 
     // Ear clipping for simple polygons (building footprints); falls back to a fan when stuck.

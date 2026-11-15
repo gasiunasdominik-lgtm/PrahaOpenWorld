@@ -60,7 +60,6 @@ public class Law : MonoBehaviour
     public void Crime(string what, Vector3 at, CarController car)
     {
         foreach (var c in calls) if (c.what == what && (c.at - at).sqrMagnitude < 400f) return; // already being reported
-        Rep.Add(at, -2);
         Walker bestW = null; Driver bestD = null; float best = Rep.WitnessRange(at); best *= best;
         foreach (var w in Pedestrians.I.live)
         {
@@ -76,6 +75,7 @@ public class Law : MonoBehaviour
         }
         var hud = GameManager.I.hud;
         if (!bestW && !bestD) { hud.Toast($"{what.ToUpperInvariant()} · NIKDO TĚ NEVIDĚL", Palette.UILight); return; }
+        Rep.Add(at, -2); // reputation is what people saw
         if (bestW) bestW.waiting = true; // stops to make the call
         calls.Add(new Call { w = bestW, d = bestD, at = at, t = CallTime, what = what, car = car });
         hud.Toast($"{what.ToUpperInvariant()} · {(bestW ? "CHODEC" : "ŘIDIČ")} TĚ VIDĚL", Palette.Accent);

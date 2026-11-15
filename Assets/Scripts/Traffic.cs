@@ -325,15 +325,18 @@ public class Traffic : MonoBehaviour
 
     void Start()
     {
-        for (int i = 0; i < maxCars; i++)
-        {
-            var car = CarController.Build(new Vector3(0, -50, 0), 0, Palette.CarPaints[i % Palette.CarPaints.Length], i % 5 == 0 ? 2 : i % 2);
-            var d = car.gameObject.AddComponent<Driver>(); d.car = car;
-            car.OnCrash = imp => d.Shock();
-            car.gameObject.SetActive(false);
-            pool.Push(d);
-            GameManager.I.cars.Add(car);
-        }
+        for (int i = 0; i < maxCars; i++) pool.Push(NewCar(i));
+    }
+
+    int built;
+    Driver NewCar(int i)
+    {
+        var car = CarController.Build(new Vector3(0, -50, 0), 0, Palette.CarPaints[i % Palette.CarPaints.Length], i % 5 == 0 ? 2 : i % 2);
+        var d = car.gameObject.AddComponent<Driver>(); d.car = car;
+        car.OnCrash = imp => d.Shock();
+        car.gameObject.SetActive(false);
+        GameManager.I.cars.Add(car); built++;
+        return d;
     }
 
     void BuildSignals()
@@ -367,7 +370,7 @@ public class Traffic : MonoBehaviour
         for (int i = live.Count - 1; i >= 0; i--)
         {
             var d = live[i];
-            if (d.car == gm.currentCar) { d.Release(); live.RemoveAt(i); continue; } // carjacked: now the player's car
+            if (d.car == gm.currentCar) { d.Release(); live.RemoveAt(i); pool.Push(NewCar(built)); continue; } // carjacked: the player keeps it, traffic gets a new one
             float dist = (d.transform.position - focus).magnitude;
             bool gone = dist > 280f || d.car.IsFlipped || d.stuck > 40f;
             if (gone && (dist > 450f || !Net.InView(d.transform.position))) { d.gameObject.SetActive(false); live.RemoveAt(i); pool.Push(d); }

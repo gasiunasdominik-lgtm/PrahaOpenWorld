@@ -29,6 +29,8 @@ public class LiveServices : MonoBehaviour
     {
         public List<string> found = new();
         public float playTime;
+        public int money = -1; // -1 = old save without money
+        public List<string> repDistrict = new(); public List<int> repScore = new(); // lists, not a dictionary: the local JsonUtility fallback can't store one
     }
 
     void Awake() { I = this; }

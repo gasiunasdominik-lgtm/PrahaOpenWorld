@@ -132,7 +132,7 @@ public class Pedestrians : MonoBehaviour
     }
 
 
-    public void Despawn(Walker w) { live.Remove(w); w.gameObject.SetActive(false); pool.Push(w); }
+    public void Despawn(Walker w) { live.Remove(w); Jobs.I?.offers.RemoveAll(o => o.passenger == w); w.gameObject.SetActive(false); pool.Push(w); } // the body is reused for someone else
 
     // Street ends that touch the given point (within 4 m), for walking on to the next street.
     public void Junction(Vector3 p, List<(int street, int vtx)> into)

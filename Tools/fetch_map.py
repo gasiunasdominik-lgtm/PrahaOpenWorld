@@ -58,6 +58,27 @@ def inside(px, pz, ring):
         if (z1 > pz) != (z2 > pz) and px < (x2 - x1) * (pz - z1) / (z2 - z1) + x1: c = not c
     return c
 
+def join_rings(ways):
+    """Kusy cest z relace OSM (seznamy {lon, lat}) -> uzavřené kruhy [x,z,...] bez opakovaného bodu; neuzavřené zahodí."""
+    ways, rings = [[(p["lon"], p["lat"]) for p in g] for g in ways], []
+    while ways:
+        r = ways.pop(0)
+        while r[0] != r[-1]:
+            for i, w in enumerate(ways):
+                if w[0] == r[-1]: r += w[1:]
+                elif w[-1] == r[-1]: r += w[::-1][1:]
+                else: continue
+                ways.pop(i); break
+            else: break
+        if r[0] == r[-1] and len(r) >= 4: rings.append(flat(r)[:-2])
+    return rings
+
+def courtyards(el, ring):
+    """Vnitřní kruhy (dvory) relace budovy, které leží uvnitř vnějšího kruhu ring -> [{"p": [x,z,...]}, ...]."""
+    if el["type"] != "relation": return []
+    inner = join_rings(m["geometry"] for m in el.get("members", []) if m.get("role") == "inner" and "geometry" in m)
+    return [{"p": h} for h in inner if inside(sum(h[0::2]) / (len(h) // 2), sum(h[1::2]) / (len(h) // 2), ring)]
+
 def metro_order(m):
     """Stanice každé linky seřazené podél trati: přiřadí stanice k lince (do 200 m od trati),
     pak je řetězí od krajní stanice k nejbližší další. shortcut: řetězení předpokládá linku bez větví."""
@@ -176,7 +197,9 @@ node["shop"]({s},{w},{n},{e});node["office"]({s},{w},{n},{e}););out geom;"""
                 cx, cz = sum(ring[0::2]) / (len(ring) // 2), sum(ring[1::2]) / (len(ring) // 2)
                 lvl = next((a["rnp_hladina"] for a, r in heightreg if a.get("rnp_hladina") and inside(cx, cz, r)), None)
                 h = lvl * 3.3 if lvl else 12.0
-            buildings.append({"h": round(h, 1), "p": ring})
+            b = {"h": round(h, 1), "p": ring}
+            if holes := courtyards(el, ring): b["holes"] = holes
+            buildings.append(b)
 
     data = {
         "credits": "data base © IPR Praha (CC BY 4.0) · © přispěvatelé OpenStreetMap (ODbL)",

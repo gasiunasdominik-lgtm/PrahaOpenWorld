@@ -100,16 +100,22 @@ public class GameManager : MonoBehaviour
     async void LoadProgress()
     {
         var p = await live.InitAndLoadAsync();
-        if (this == null || p == null) return;
+        if (this == null) return;
+        loaded = true; // from now on saving cannot overwrite a save we have not read yet
+        if (p == null) return;
         foreach (var n in p.found) found.Add(n);
         playTime = Mathf.Max(playTime, p.playTime);
+        if (p.money >= 0) Jobs.I.money = p.money;
+        if (p.repDistrict != null) for (int i = 0; i < p.repDistrict.Count && i < p.repScore.Count; i++) Rep.score[p.repDistrict[i]] = p.repScore[i];
         hud.SetLandmarks(found.Count, CityBuilder.Landmarks.Length);
     }
 
+    bool loaded;
     void SaveProgress()
     {
-        if (live == null) return;
-        live.Save(new LiveServices.Progress { found = new List<string>(found), playTime = playTime });
+        if (live == null || !loaded) return;
+        live.Save(new LiveServices.Progress { found = new List<string>(found), playTime = playTime, money = Jobs.I ? Jobs.I.money : -1,
+            repDistrict = new List<string>(Rep.score.Keys), repScore = new List<int>(Rep.score.Values) });
     }
 
     void OnApplicationQuit() => SaveProgress();
@@ -223,7 +229,7 @@ public class GameManager : MonoBehaviour
     IEnumerator RestartCo()
     {
         // "Začít znovu" is a clean run: discoveries and the clock reset
-        found.Clear(); playTime = 0f;
+        found.Clear(); playTime = 0f; Jobs.I.money = 500; Rep.score.Clear();
         SaveProgress();
         yield return hud.FadeTo(1f, 0.3f);
         Time.timeScale = 1f;

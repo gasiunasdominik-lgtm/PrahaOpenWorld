@@ -17,10 +17,8 @@ public static class CityBuilder
         public float x0, z0, x1, z1;
         public Rect2(float x0, float z0, float x1, float z1) { this.x0 = x0; this.z0 = z0; this.x1 = x1; this.z1 = z1; }
         public bool Contains(float x, float z) => x >= x0 && x <= x1 && z >= z0 && z <= z1;
-        public bool Overlaps(Rect2 o) => x0 < o.x1 && x1 > o.x0 && z0 < o.z1 && z1 > o.z0;
     }
 
-    public static readonly Rect2 Plateau = new(-560, 100, -330, 330);
 
 
 
@@ -38,9 +36,8 @@ public static class CityBuilder
     // Real OSM buildings removed where a hand-made landmark model stands (or the real one would double it).
     static readonly (Vector2 c, float r)[] KeepOut =
     {
-        // castle: only the real cathedral footprint and the whole-castle outline (no courtyards in the data, it would fill them solid).
-        // shortcut: castle palace wings are missing until fetch_map keeps inner rings (courtyards); then drop the outline entry.
-        (new Vector2(-774, 484), 6), (new Vector2(-769, 435), 6),
+        // castle: only the real cathedral footprint (the castle outline stays, its courtyards are holes in the data)
+        (new Vector2(-774, 484), 6),
         (new Vector2(-570, 164), 45), (new Vector2(2834, -603), 30), (new Vector2(-1166, -326), 14),
         (new Vector2(808, 114), 28), (new Vector2(663.5f, 63.5f), 9), // real Týn church nave, real Old Town Hall tower (its wings stay real)
     };
