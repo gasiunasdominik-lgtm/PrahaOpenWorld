@@ -132,6 +132,18 @@ public class Pedestrians : MonoBehaviour
     }
 
 
+    // A driver pulled out of their car: stands by the kerb next to it and phones the police.
+    public Walker Victim(Vector3 at)
+    {
+        if (!NearestVertex(at, out int s, out int v)) return null;
+        var w = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
+        w.gameObject.SetActive(true);
+        var home = at + new Vector3((float)rng.NextDouble() - 0.5f, 0, (float)rng.NextDouble() - 0.5f) * 800f; // walks home after the call
+        w.Begin(s, v, home, "domů", "domov", new Vector3(at.x, MapBuilder.Height(at.x, at.z), at.z), rng);
+        w.waiting = true; live.Add(w);
+        return w;
+    }
+
     public void Despawn(Walker w) { live.Remove(w); Jobs.I?.offers.RemoveAll(o => o.passenger == w); w.gameObject.SetActive(false); pool.Push(w); } // the body is reused for someone else
 
     // Street ends that touch the given point (within 4 m), for walking on to the next street.

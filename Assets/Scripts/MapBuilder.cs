@@ -111,6 +111,7 @@ public static class MapBuilder
         D.streets = walk.ToArray();
 
         BuildBuildings(root);
+        PlacesToDoors();
         BuildMetroEntrances(root);
         BuildTrees(root);
         BuildBounds(root);
@@ -244,6 +245,34 @@ public static class MapBuilder
         foreach (var kv in tiles) kv.Value.Build($"IprDomy_{kv.Key.x}_{kv.Key.y}", root, false);
         Debug.Log($"[Mapa] IPR 3D budovy: {Ipr.Count}");
         return true;
+    }
+
+    // OSM puts a shop's point inside its building, where nobody can stand: a courier had to get within 9 m of it,
+    // and for 1 in 20 places that was impossible. Move every such point to the nearest open ground: its street door.
+    static void PlacesToDoors()
+    {
+        Physics.SyncTransforms();
+        static bool Roof(float x, float z) => Physics.Raycast(new Vector3(x, 500f, z), Vector3.down, out var h, 600f, ~0, QueryTriggerInteraction.Ignore)
+                                               && h.collider.name.StartsWith("Domy");
+        foreach (var p in D.places)
+        {
+            if (!Roof(p.p[0], p.p[1]) && Height(p.p[0], p.p[1]) > -0.5f) continue; // islands and boats are river to us: to the bank
+            for (float r = 1f; r <= 60f; r += 1f)
+            {
+                int k = 0;
+                for (; k < 16; k++)
+                {
+                    float a = k * Mathf.PI / 8f;
+                    float x = p.p[0] + Mathf.Cos(a) * r, z = p.p[1] + Mathf.Sin(a) * r;
+                    if (!Roof(x, z) && Height(x, z) > -0.5f) break; // open ground, not the river behind an embankment house
+                }
+                if (k == 16) continue;
+                float b = k * Mathf.PI / 8f, out1 = r + 1f; // one more metre out, onto the pavement (unless that is the river)
+                if (Height(p.p[0] + Mathf.Cos(b) * out1, p.p[1] + Mathf.Sin(b) * out1) <= -0.5f) out1 = r;
+                p.p[0] += Mathf.Cos(b) * out1; p.p[1] += Mathf.Sin(b) * out1;
+                break;
+            }
+        }
     }
 
     static void BuildBuildings(Transform root)

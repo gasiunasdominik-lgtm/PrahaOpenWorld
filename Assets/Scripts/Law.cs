@@ -53,11 +53,12 @@ public class Law : MonoBehaviour
     public void OnEnterCar(CarController c, bool hadDriver)
     {
         if (Owner(c) == "ty") return;
-        Crime(hadDriver ? "přepadení řidiče" : "krádež auta", c.transform.position, c);
+        var at = c.transform.position;
+        Crime(hadDriver ? "přepadení řidiče" : "krádež auta", at, c, hadDriver ? Pedestrians.I.Victim(at - c.transform.right * 2.2f) : null);
     }
 
     // Something bad happened at `at`. Who saw it?
-    public void Crime(string what, Vector3 at, CarController car)
+    public void Crime(string what, Vector3 at, CarController car, Walker victim = null)
     {
         foreach (var c in calls) if (c.what == what && (c.at - at).sqrMagnitude < 400f) return; // already being reported
         Walker bestW = null; Driver bestD = null; float best = Rep.WitnessRange(at); best *= best;
@@ -73,12 +74,13 @@ public class Law : MonoBehaviour
             float q = (d.transform.position - at).sqrMagnitude;
             if (q < best && Sees(d.transform.position + Vector3.up * 1.4f, at)) { best = q; bestW = null; bestD = d; }
         }
+        if (victim) { bestW = victim; bestD = null; } // the driver you threw out saw you best of all
         var hud = GameManager.I.hud;
         if (!bestW && !bestD) { hud.Toast($"{what.ToUpperInvariant()} · NIKDO TĚ NEVIDĚL", Palette.UILight); return; }
         Rep.Add(at, -2); // reputation is what people saw
         if (bestW) bestW.waiting = true; // stops to make the call
         calls.Add(new Call { w = bestW, d = bestD, at = at, t = CallTime, what = what, car = car });
-        hud.Toast($"{what.ToUpperInvariant()} · {(bestW ? "CHODEC" : "ŘIDIČ")} TĚ VIDĚL", Palette.Accent);
+        hud.Toast($"{what.ToUpperInvariant()} · {(victim ? "OKRADENÝ ŘIDIČ VOLÁ POLICII" : bestW ? "CHODEC TĚ VIDĚL" : "ŘIDIČ TĚ VIDĚL")}", Palette.Accent);
     }
 
     public static bool Sees(Vector3 eye, Vector3 at)

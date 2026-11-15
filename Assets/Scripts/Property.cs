@@ -66,9 +66,7 @@ public class Property : MonoBehaviour
         var mb = new MeshBuilder();
         mb.Box(Gfx.Emissive(Palette.Gold, 2.5f), Vector3.zero, new Vector3(3.2f, 1f, 0.15f));
         var go = mb.Build("VyvesniStit", transform, false, false);
-        var at = At(place); // the point lies inside the building: float over its roof instead
-        if (Physics.Raycast(at + Vector3.up * 300f, Vector3.down, out var hit, 400f, ~0, QueryTriggerInteraction.Ignore)) at.y = hit.point.y;
-        go.transform.position = at + Vector3.up * 3f;
+        go.transform.position = At(place) + Vector3.up * 3.5f; // the place point is its street door: a shop sign over it
         signs[place] = go;
     }
 
