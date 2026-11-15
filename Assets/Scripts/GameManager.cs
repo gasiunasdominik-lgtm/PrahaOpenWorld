@@ -38,6 +38,8 @@ public class GameManager : MonoBehaviour
             new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
 
         CityBuilder.Build();
+        gameObject.AddComponent<GameClock>();
+        new GameObject("Chodci").AddComponent<Pedestrians>();
         new GameObject("Audio").AddComponent<GameAudio>();
         new GameObject("Vfx").AddComponent<Vfx>();
 
@@ -264,6 +266,7 @@ public class GameManager : MonoBehaviour
 
         Vector3 focus = currentCar ? currentCar.transform.position : player.transform.position;
         hud.SetDistrict(CityBuilder.District(focus));
+        hud.clockText.text = GameClock.I.Clock;
         hud.SetMinimap(currentCar ? currentCar.transform.eulerAngles.y : player.transform.eulerAngles.y);
         hud.SetSpeed(currentCar != null, currentCar ? currentCar.SpeedKmh : 0f);
 

@@ -7,12 +7,13 @@ using UnityEngine;
 // and metro from OpenStreetMap. 1 unit = 1 m, origin = middle of Charles Bridge, y 0 = Vltava level.
 public static class MapBuilder
 {
-    [Serializable] public class Poly { public string n; public float w; public bool foot; public float h; public float[] p; }
+    [Serializable] public class Poly { public string n, k; public float w; public bool foot; public float h; public float[] p; }
     [Serializable] public class Terrain { public float x0, z0, cell; public int w, h; public string dm, lu; }
     [Serializable] public class Metro { public float depth; public Poly[] stations, entrances; }
-    [Serializable] public class Data { public string credits; public Terrain terrain; public Poly[] streets, squares, parks, districts, trams, buildings; public Metro metro; }
+    [Serializable] public class Data { public string credits; public Terrain terrain; public Poly[] streets, squares, parks, districts, trams, buildings, places; public Metro metro; }
 
     public static Data D;
+    public static readonly List<float[]> StreetY = new(); // walkable height per street vertex (bridges included)
     static float[] hm; static byte[] lu;
     public const float WaterY = -0.6f;
     const int Chunk = 64; // terrain cells per mesh tile
@@ -54,7 +55,7 @@ public static class MapBuilder
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { D = null; hm = null; lu = null; } // domain reload is off
+    static void ResetStatics() { D = null; hm = null; lu = null; StreetY.Clear(); } // domain reload is off
 
     public static void Build(Transform root, List<(Vector3 pos, float yaw)> parking)
     {
@@ -76,9 +77,10 @@ public static class MapBuilder
         var rail = Gfx.Mat(Color.Lerp(Palette.Asphalt, Palette.Slate, 0.6f), 0.5f);
         var streets = new MeshBuilder();
         int k = 0;
+        StreetY.Clear();
         foreach (var s in D.streets)
         {
-            Ribbon(streets, s.p, s.w, 0.12f, s.foot ? cobble : asphalt, stone);
+            StreetY.Add(Ribbon(streets, s.p, s.w, 0.12f, s.foot ? cobble : asphalt, stone));
             // parked cars every few streets, on the kerb side of drivable ones
             if (!s.foot && s.w >= 7.5f && s.p.Length >= 4 && (k++ % 9) == 0)
             {
@@ -90,6 +92,21 @@ public static class MapBuilder
         }
         foreach (var tr in D.trams) Ribbon(streets, tr.p, 1.6f, 0.16f, rail, null);
         streets.Build("Ulice", root, true, false);
+
+        // squares are areas, not lines: give pedestrians a few invisible paths across each one
+        var walk = new List<Poly>(D.streets);
+        foreach (var sq in D.squares)
+        {
+            int n = sq.p.Length / 2; if (n < 4) continue;
+            for (int i = 0; i < n / 2; i += Mathf.Max(1, n / 8))
+            {
+                int j = (i + n / 2) % n;
+                var line = new[] { sq.p[2 * i], sq.p[2 * i + 1], sq.p[2 * j], sq.p[2 * j + 1] };
+                walk.Add(new Poly { w = 4f, foot = true, p = line });
+                StreetY.Add(new[] { Height(line[0], line[1]), Height(line[2], line[3]) });
+            }
+        }
+        D.streets = walk.ToArray();
 
         BuildBuildings(root);
         BuildMetroEntrances(root);
@@ -119,9 +136,9 @@ public static class MapBuilder
 
     // A flat strip along a polyline draped on the terrain; stretches over water become bridges
     // that run straight between the banks, with stone parapets.
-    static void Ribbon(MeshBuilder mb, float[] p, float width, float lift, Material m, Material parapet)
+    static float[] Ribbon(MeshBuilder mb, float[] p, float width, float lift, Material m, Material parapet)
     {
-        int n = p.Length / 2; if (n < 2) return;
+        int n = p.Length / 2; if (n < 2) return new float[n];
         var pts = new Vector3[n]; var wet = new bool[n];
         for (int i = 0; i < n; i++) { float h = Height(p[2 * i], p[2 * i + 1]); wet[i] = h < 0.5f; pts[i] = new Vector3(p[2 * i], h, p[2 * i + 1]); }
         for (int i = 0; i < n; i++)
@@ -147,6 +164,9 @@ public static class MapBuilder
                 foreach (float s in new[] { -1f, 1f })
                     mb.Wall(parapet, a + side * s, b + side * s, a.y - 1.2f, a.y + 1f, side * s);
         }
+        var ys = new float[n];
+        for (int i = 0; i < n; i++) ys[i] = pts[i].y;
+        return ys;
     }
 
     // The bank height a bridge lands on, found by walking past the end of the street.

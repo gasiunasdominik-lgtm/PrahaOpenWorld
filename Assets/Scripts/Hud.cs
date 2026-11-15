@@ -9,7 +9,7 @@ public class Hud : MonoBehaviour
 {
     public Canvas canvas;
     public RectTransform hudRoot, titleRoot, pauseRoot, endRoot;
-    public TextMeshProUGUI districtText, landmarkText, speedText, speedUnit, promptText, toastText, hintText;
+    public TextMeshProUGUI districtText, landmarkText, clockText, speedText, speedUnit, promptText, toastText, hintText;
     public TextMeshProUGUI titleName, titleSub, titlePrompt, endTitle, endStats;
     public RectTransform minimapArrow, speedPanel, toastPanel;
     public RawImage minimap;
@@ -48,6 +48,8 @@ public class Hud : MonoBehaviour
         Place(districtText.rectTransform, new Vector2(0, 1), new Vector2(36, -14), new Vector2(410, 50));
         landmarkText = Text("Landmarks", loc, "PAMÁTKY 0/6", 20, Palette.Gold, TextAlignmentOptions.TopLeft);
         Place(landmarkText.rectTransform, new Vector2(0, 1), new Vector2(36, -64), new Vector2(240, 30));
+        clockText = Text("Clock", loc, "07:30", 22, Palette.UILight, TextAlignmentOptions.TopLeft);
+        Place(clockText.rectTransform, new Vector2(0, 1), new Vector2(36, -104), new Vector2(200, 30));
         var barBg = Img("LandmarkBarBg", loc, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(170, 8), new Vector2(232, -76), Palette.Shadow, 1f);
         landmarkBar = Img("LandmarkBar", barBg.rectTransform, Vector2.zero, Vector2.one, new Vector2(0, 0.5f), Vector2.zero, Vector2.zero, Palette.Gold, 1f);
         landmarkBar.type = Image.Type.Filled;

@@ -74,7 +74,9 @@ def main():
 way["natural"="water"]({s},{w},{n},{e});relation["natural"="water"]({s},{w},{n},{e});
 way["railway"="tram"]({s},{w},{n},{e});
 relation["route"="subway"]({s},{w},{n},{e});node["railway"="subway_entrance"]({s},{w},{n},{e});
-node["station"="subway"]({s},{w},{n},{e}););out geom;"""
+node["station"="subway"]({s},{w},{n},{e});
+node["amenity"~"^(pub|bar|restaurant|cafe|fast_food|biergarten)$"]({s},{w},{n},{e});
+node["shop"]({s},{w},{n},{e});node["office"]({s},{w},{n},{e}););out geom;"""
     osm = get("https://overpass-api.de/api/interpreter", urllib.parse.urlencode({"data": q}).encode())["elements"]
     print(f"  OSM prvků: {len(osm)}")
 
@@ -177,10 +179,15 @@ node["station"="subway"]({s},{w},{n},{e}););out geom;"""
                           if el["type"] == "node" and el.get("tags", {}).get("railway") == "subway_entrance"],
         },
         "buildings": buildings,
+        # Místa: atom s funkcí (druh) a jménem; shortcut: jen body, podniky zakreslené jako plochy chybí
+        "places": [{"n": el["tags"].get("name", ""), "k": el["tags"].get("amenity") or ("shop" if "shop" in el["tags"] else "office"),
+                    "p": list(proj(el["lon"], el["lat"]))} for el in osm if el["type"] == "node"
+                   and ("shop" in el.get("tags", {}) or "office" in el.get("tags", {})
+                        or el.get("tags", {}).get("amenity") in ("pub", "bar", "restaurant", "cafe", "fast_food", "biergarten"))],
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as fh: json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
-    print(f"Hotovo: {OUT} ({os.path.getsize(OUT)/1e6:.1f} MB), mapa {W}x{H} buněk, budov {len(buildings)}, metro úseků {len(data['metro']['lines'])} / stanic {len(data['metro']['stations'])} / vstupů {len(data['metro']['entrances'])}, ulic {len(data['streets'])}, hladina řeky {river} m n. m.")
+    print(f"Hotovo: {OUT} ({os.path.getsize(OUT)/1e6:.1f} MB), mapa {W}x{H} buněk, budov {len(buildings)}, metro úseků {len(data['metro']['lines'])} / stanic {len(data['metro']['stations'])} / vstupů {len(data['metro']['entrances'])}, ulic {len(data['streets'])}, míst {len(data['places'])}, hladina řeky {river} m n. m.")
 
 if __name__ == "__main__":
     main()

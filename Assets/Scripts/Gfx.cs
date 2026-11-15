@@ -13,7 +13,7 @@ public static class Gfx
     static readonly int Smoothness = Shader.PropertyToID("_Smoothness");
     static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
 
-    public static Texture2D WindowTex, CobbleTex, RoadTex, RoundedTex;
+    public static Texture2D WindowTex, WindowGlowTex, CobbleTex, RoadTex, RoundedTex;
     public static Sprite RoundedSprite, CircleSprite, ArrowSprite;
 
     // Domain reload is disabled (Enter Play Mode Options), so statics survive between
@@ -24,7 +24,7 @@ public static class Gfx
     {
         cache.Clear();
         baseMat = null;
-        WindowTex = CobbleTex = RoadTex = RoundedTex = null;
+        WindowTex = WindowGlowTex = CobbleTex = RoadTex = RoundedTex = null;
         RoundedSprite = CircleSprite = ArrowSprite = null;
     }
 
@@ -40,6 +40,7 @@ public static class Gfx
         else baseMat = rp.defaultMaterial;
 
         WindowTex = MakeWindowTex();
+        WindowGlowTex = MakeWindowGlow();
         CobbleTex = MakeCobbleTex();
         RoadTex = MakeRoadTex();
         RoundedTex = MakeRounded(48, 14);
@@ -100,6 +101,34 @@ public static class Gfx
     }
 
     // One window cell (3.2 m x 3.4 m). White wall so the material tint gives the facade color.
+    // Emission mask matching the glass panes of WindowTex: lit windows at night.
+    static Texture2D MakeWindowGlow()
+    {
+        const int S = 64;
+        var t = NewTex(S, S, "WindowGlowTex");
+        var px = new Color[S * S];
+        for (int y = 0; y < S; y++)
+        for (int x = 0; x < S; x++)
+        {
+            bool glass = x >= 21 && x <= 42 && y >= 18 && y <= 48, mullion = x == 31 || x == 32 || y == 37;
+            px[y * S + x] = glass && !mullion ? Color.white : Color.black;
+        }
+        t.SetPixels(px); t.Apply();
+        return t;
+    }
+
+    static readonly Color WarmWindow = new(1f, 0.72f, 0.38f);
+    /// 0 = windows dark (day), 1 = all facade windows glow (night).
+    public static void SetNightWindows(float k)
+    {
+        foreach (var m in cache.Values)
+        {
+            if (m == null || !m.name.EndsWith("facade")) continue;
+            if (!m.IsKeywordEnabled("_EMISSION")) { m.EnableKeyword("_EMISSION"); m.SetTexture("_EmissionMap", WindowGlowTex); }
+            m.SetColor(EmissionColor, WarmWindow * k);
+        }
+    }
+
     static Texture2D MakeWindowTex()
     {
         const int S = 64;
