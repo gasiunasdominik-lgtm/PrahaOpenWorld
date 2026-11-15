@@ -17,7 +17,8 @@ public class Transit : MonoBehaviour
     // metro menu state
     int station = -1, line, dest; readonly List<int> lines = new();
     bool travelling;
-    public bool debugE; // tests press E without keyboard focus
+    public bool debugE;
+    public bool InMetro => station >= 0 || travelling; // tests press E without keyboard focus
 
     void Awake()
     {

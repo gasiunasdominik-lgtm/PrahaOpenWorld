@@ -67,6 +67,9 @@ public class GameManager : MonoBehaviour
 
         new GameObject("Doprava").AddComponent<Traffic>();
         new GameObject("MHD").AddComponent<Transit>();
+        new GameObject("Zakon").AddComponent<Law>();
+        new GameObject("Zakazky").AddComponent<Jobs>();
+        gameObject.AddComponent<Inspect>();
 
         rig = new GameObject("CameraRig").AddComponent<CameraRig>();
         rig.Setup();
@@ -182,7 +185,7 @@ public class GameManager : MonoBehaviour
         yield return hud.FadeTo(0f, 0.3f);
         transitioning = false;
         StartCoroutine(HideHintLater());
-        hud.Toast("VÍTEJ V PRAZE", Palette.UILight, 1.8f);
+        hud.Toast("VÍTEJ V PRAZE · [TAB] MOBIL · [Q] PROHLÉDNOUT", Palette.UILight, 3f);
     }
 
     IEnumerator HideHintLater()
@@ -300,6 +303,7 @@ public class GameManager : MonoBehaviour
 
     public void EnterCar(CarController car)
     {
+        Law.I.OnEnterCar(car, car.ai);
         currentCar = car;
         car.SetDriven(true);
         player.controlEnabled = false;

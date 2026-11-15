@@ -9,6 +9,8 @@ public class Hud : MonoBehaviour
 {
     public Canvas canvas;
     public RectTransform hudRoot, titleRoot, pauseRoot, endRoot;
+    public TextMeshProUGUI moneyText, wantedText, jobText, phoneText, cardText;
+    public GameObject phonePanel, cardPanel;
     public TextMeshProUGUI districtText, landmarkText, clockText, speedText, speedUnit, promptText, toastText, hintText;
     public TextMeshProUGUI titleName, titleSub, titlePrompt, endTitle, endStats;
     public RectTransform minimapArrow, speedPanel, toastPanel;
@@ -55,6 +57,24 @@ public class Hud : MonoBehaviour
         landmarkBar.type = Image.Type.Filled;
         landmarkBar.fillMethod = Image.FillMethod.Horizontal;
         landmarkBar.fillAmount = 0;
+
+        // money, wanted level, active job (top-right); phone (right); inspect card (bottom-centre)
+        moneyText = Text("Money", hudRoot, "500 Kč", 36, Palette.Gold, TextAlignmentOptions.TopRight);
+        Place(moneyText.rectTransform, new Vector2(1, 1), new Vector2(-40, -36), new Vector2(420, 50));
+        wantedText = Text("Wanted", hudRoot, "", 24, Palette.Accent, TextAlignmentOptions.TopRight);
+        Place(wantedText.rectTransform, new Vector2(1, 1), new Vector2(-40, -88), new Vector2(900, 70));
+        jobText = Text("Job", hudRoot, "", 24, Palette.UILight, TextAlignmentOptions.TopRight);
+        Place(jobText.rectTransform, new Vector2(1, 1), new Vector2(-40, -160), new Vector2(900, 70));
+        var phone = Panel("Phone", hudRoot, new Vector2(1, 0.5f), new Vector2(-40, 0), new Vector2(720, 600), Palette.UIDark, 0.92f);
+        phoneText = Text("PhoneText", phone, "", 24, Palette.UILight, TextAlignmentOptions.TopLeft);
+        phoneText.textWrappingMode = TextWrappingModes.Normal; phoneText.characterSpacing = 0;
+        Place(phoneText.rectTransform, new Vector2(0, 1), new Vector2(26, -22), new Vector2(668, 560));
+        phonePanel = phone.gameObject; phonePanel.SetActive(false);
+        var card = Panel("Card", hudRoot, new Vector2(0.5f, 0), new Vector2(0, 210), new Vector2(900, 150), Palette.UIDark, 0.9f);
+        cardText = Text("CardText", card, "", 22, Palette.UILight, TextAlignmentOptions.TopLeft);
+        cardText.textWrappingMode = TextWrappingModes.Normal; cardText.characterSpacing = 0;
+        Place(cardText.rectTransform, new Vector2(0, 1), new Vector2(24, -18), new Vector2(852, 120));
+        cardPanel = card.gameObject; cardPanel.SetActive(false);
 
         // minimap (bottom-left)
         var mapFrame = Panel("MinimapFrame", hudRoot, new Vector2(0, 0), new Vector2(40, 40), new Vector2(300, 300), Palette.UIDark, 0.9f);

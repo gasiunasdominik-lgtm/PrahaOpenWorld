@@ -15,6 +15,30 @@ public static class Places
         _ => h >= 9f && h < 18f,
     };
 
+    public static string Hours(string kind) => kind switch
+    {
+        "pub" or "bar" or "biergarten" => "16–2", "restaurant" => "11–23", "cafe" => "8–22", "fast_food" => "9–1",
+        "shop" => "8–19", "office" => "8–17", _ => "9–18",
+    };
+
+    public static string KindName(string k) => k switch
+    {
+        "pub" => "hospoda", "bar" => "bar", "restaurant" => "restaurace", "cafe" => "kavárna", "fast_food" => "bistro",
+        "biergarten" => "pivní zahrádka", "shop" => "obchod", "office" => "kancelář", _ => "podnik",
+    };
+
+    // What a place sends out (courier jobs) — its purpose in the city.
+    public static string Item(string k) => k switch
+    {
+        "restaurant" or "fast_food" => "jídlo", "cafe" => "dort", "pub" or "bar" or "biergarten" => "sud piva",
+        "shop" => "balík", "office" => "dokumenty", _ => "zásilku",
+    };
+
+    public static string Why(string purpose) => purpose switch
+    {
+        "do práce" => "do práce", "na oběd" => "na oběd", "nakoupit" => "na nákup", "za zábavou" => "za kamarády", _ => "domů",
+    };
+
     // What people out on the street are doing at this hour (atom "Rozvrh").
     public static string Purpose(float h) =>
         h < 5f ? "domů" : h < 10f ? "do práce" : h < 14f ? "na oběd" : h < 17f ? "nakoupit" : h < 22.5f ? "za zábavou" : "domů";

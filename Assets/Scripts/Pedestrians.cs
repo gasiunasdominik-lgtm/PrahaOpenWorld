@@ -51,7 +51,7 @@ public class Pedestrians : MonoBehaviour
             local = Mathf.Clamp(Places.OpenNear(focus, hour) / 12f, 0.25f, 1.4f);
         }
         for (int i = live.Count - 1; i >= 0; i--)
-            if ((live[i].transform.position - focus).sqrMagnitude > despawn * despawn) Despawn(live[i]);
+            if ((live[i].transform.position - focus).sqrMagnitude > despawn * despawn && !live[i].waiting) Despawn(live[i]);
 
         if ((spawnTimer -= Time.deltaTime) <= 0f && live.Count < Target)
         {
@@ -83,7 +83,7 @@ public class Pedestrians : MonoBehaviour
             var start = new Vector3(MapBuilder.D.streets[s].p[2 * v], 0, MapBuilder.D.streets[s].p[2 * v + 1]);
             var dest = Places.PickDestination(start, purpose, hour, rng);
             Vector3 target; string name;
-            if (dest != null) { target = new Vector3(dest.p[0], 0, dest.p[1]); name = string.IsNullOrEmpty(dest.n) ? KindName(dest.k) : dest.n; }
+            if (dest != null) { target = new Vector3(dest.p[0], 0, dest.p[1]); name = string.IsNullOrEmpty(dest.n) ? Places.KindName(dest.k) : dest.n; }
             else { purpose = "domů"; target = start + new Vector3((float)rng.NextDouble() - 0.5f, 0, (float)rng.NextDouble() - 0.5f) * 800f; name = "domov"; }
             var w = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
             w.gameObject.SetActive(true);
@@ -114,11 +114,6 @@ public class Pedestrians : MonoBehaviour
         return v.z > 0 && v.x > -0.1f && v.x < 1.1f && v.y > -0.1f && v.y < 1.1f;
     }
 
-    static string KindName(string k) => k switch
-    {
-        "pub" => "hospoda", "bar" => "bar", "restaurant" => "restaurace", "cafe" => "kavárna", "fast_food" => "bistro",
-        "shop" => "obchod", "office" => "kancelář", _ => "podnik",
-    };
 
     public void Despawn(Walker w) { live.Remove(w); w.gameObject.SetActive(false); pool.Push(w); }
 
@@ -146,6 +141,7 @@ public class Walker : MonoBehaviour
     public string purpose, destName;
     public Vector3 dest;
     public bool Down => down > 0f;
+    public bool waiting; // stands still: waiting for a taxi or on the phone to the police
     CharacterMotion cm; Rigidbody rb; CapsuleCollider solid;
     int street, vtx, dir; float u, side, speed, down; Vector3 dodge, lastPos;
     enum Mode { Street, Exit, Enter }
@@ -179,6 +175,7 @@ public class Walker : MonoBehaviour
 
     public void Begin(int s, int v, Vector3 target, string why, string where, Vector3? door, System.Random rng)
     {
+        waiting = false;
         street = s; vtx = v; dest = target; purpose = why; destName = where;
         var p = MapBuilder.D.streets[s].p; int n = p.Length / 2;
         dir = v == n - 1 ? -1 : v == 0 ? 1 : (rng.Next(2) == 0 ? 1 : -1);
@@ -206,6 +203,7 @@ public class Walker : MonoBehaviour
             if ((down -= Time.deltaTime) <= 0f) { Stand(); mode = Mode.Exit; freeTarget = Point(street, vtx, vtx + dir, u); lastPos = transform.position; }
             return;
         }
+        if (waiting) { cm.Tick(Vector3.zero, Time.deltaTime); lastPos = transform.position; return; }
         Vector3 pos;
         if (mode != Mode.Street)
         {
@@ -257,6 +255,9 @@ public class Walker : MonoBehaviour
         if (down > 0f) return;
         var car = other.GetComponentInParent<CarController>();
         if (car == null || car.SpeedKmh < 8f) return;
+        if (car.ai && car.SpeedKmh < 25f) // a braking city car only nudges: the person jumps aside
+        { var away = transform.position - car.transform.position; away.y = 0; dodge = away.normalized * 2.5f; return; }
+        if (car == GameManager.I.currentCar) Law.I.Crime("sražený chodec", transform.position, car);
         var carRb = car.GetComponent<Rigidbody>();
         down = 4f;
         rb.isKinematic = false;
