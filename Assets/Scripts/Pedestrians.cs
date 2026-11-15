@@ -252,31 +252,16 @@ public class Walker : MonoBehaviour
     public bool waiting; // stands still: waiting for a taxi or on the phone to the police
     public Walker leader; public float offset; // walking in a group: keep abreast of the leader
     public void GroupSpeed(int n) => speed = Mathf.Max(0.8f, speed - 0.04f * n); // groups walk slower (Moussaïd et al. 2010)
-    CharacterMotion cm; Rigidbody rb; CapsuleCollider solid;
+    HumanMotion cm; Rigidbody rb; CapsuleCollider solid;
     int street, vtx, dir; float u, side, speed, down; Vector3 dodge, lastPos;
     enum Mode { Street, Exit, Enter }
     Mode mode; Vector3 freeTarget;
     static readonly List<(int, int)> scratch = new();
-    static readonly Color[] Coats = { Palette.Jacket, Palette.Terracotta, Palette.Slate, Palette.Ochre, Palette.PaleSage, Palette.DustyPink, Palette.Copper, Palette.Plinth };
-    static readonly Color[] Hairs = { Palette.Hair, Palette.Trunk, Palette.Butter, Palette.Slate, Palette.Cornice };
 
     public static Walker Create(Transform parent, System.Random rng)
     {
         var go = new GameObject("Chodec"); go.transform.SetParent(parent, false);
-        var cm = CharacterMotion.BuildHero(go.transform);
-        cm.maxSpeed = 3f;
-        var coat = Gfx.Mat(Coats[rng.Next(Coats.Length)], 0.15f);
-        var hair = Gfx.Mat(Hairs[rng.Next(Hairs.Length)], 0.15f);
-        foreach (var r in go.GetComponentsInChildren<Renderer>())
-        {
-            string n = r.name;
-            if (n.StartsWith("Torso") || n.StartsWith("Sleeve") || n.StartsWith("JacketHem")) r.sharedMaterial = coat;
-            else if (n.StartsWith("Hair") || n.StartsWith("Fringe")) r.sharedMaterial = hair;
-            else if (n.Contains("Scarf")) r.enabled = false; // the red scarf is the hero's signature
-            // only the big parts throw a shadow; eyes, hands and shoes were 1 300 extra shadow casters for nothing visible
-            if (!(n.StartsWith("Torso") || n.StartsWith("Head") || n.StartsWith("Thigh"))) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        }
-        CharacterMotion.LowPoly(go.transform);
+        var cm = People.Spawn(go.transform, rng);
         var w = go.AddComponent<Walker>(); w.cm = cm;
         // solid body (own layer): blocks the player; cars pass through it and are sensed by the trigger instead (a kinematic body would stop a car dead)
         var body = new GameObject("Telo") { layer = Traffic.BodyLayer }; body.transform.SetParent(go.transform, false);
@@ -303,6 +288,32 @@ public class Walker : MonoBehaviour
         else { mode = Mode.Street; transform.position = lastPos = Point(street, vtx, vtx + dir, 0f); }
     }
 
+    // Over a bridge the OSM centre line and the real (IPR) deck can be metres apart: keep the walker on the deck.
+    // The nearest lateral offset that has deck under it becomes the walker's lane; the height is the deck's own.
+    const int DeckMask = ~((1 << Traffic.BodyLayer) | (1 << Traffic.CarLayer));
+    static bool Deck(Vector3 q, out float y)
+    {
+        y = 0;
+        if (!Physics.Raycast(q + Vector3.up * 2.5f, Vector3.down, out var h, 5f, DeckMask, QueryTriggerInteraction.Ignore)) return false;
+        y = h.point.y; return h.point.y > MapBuilder.Height(q.x, q.z) + 1.5f;
+    }
+    // perp: unit lateral axis of the street (positive side); moves the walker's lane to the nearest deck
+    Vector3 OnDeck(Vector3 q, Vector3 perp)
+    {
+        if (Deck(q, out float y)) { q.y = y; return q; }
+        for (float d = 1f; d <= 14f; d += 1f)
+            foreach (float sg in new[] { -1f, 1f })
+            {
+                float o = sg * d;
+                if (!Deck(q + perp * o, out y)) continue;
+                // the first deck point is at the parapet: go a little further in if there is deck there
+                if (Deck(q + perp * (o + sg * 1.5f), out float y2)) { o += sg * 1.5f; y = y2; }
+                side += o;
+                var c = q + perp * o; c.y = y; return c;
+            }
+        return q;
+    }
+
     Vector3 Point(int s, int a, int b, float t)
     {
         var p = MapBuilder.D.streets[s].p; var y = MapBuilder.StreetY[s];
@@ -310,6 +321,7 @@ public class Walker : MonoBehaviour
         var side3 = Vector3.Cross(Vector3.up, new Vector3(B.x - A.x, 0, B.z - A.z)).normalized * side;
         var q = Vector3.Lerp(A, B, t) + side3;
         q.y = MapBuilder.SurfaceY(s, a, b, t, q.x, q.z); // on the drawn surface: a lerp between far-apart vertices floated over dips
+        if (q.y > MapBuilder.Height(q.x, q.z) + 2f) q = OnDeck(q, Vector3.Cross(Vector3.up, new Vector3(B.x - A.x, 0, B.z - A.z)).normalized);
         return q + Vector3.up * 0.12f;
     }
 

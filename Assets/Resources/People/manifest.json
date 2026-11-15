@@ -1,0 +1,213 @@
+{
+ "materials": {
+  "male_casualsuit02": {
+   "alpha": false
+  },
+  "shoes02": {
+   "alpha": false
+  },
+  "short02": {
+   "alpha": true
+  },
+  "eyebrow001": {
+   "alpha": true
+  },
+  "Eye_brown": {
+   "alpha": true
+  },
+  "Skin_young_caucasian_male": {
+   "alpha": false
+  },
+  "female_casualsuit01": {
+   "alpha": false
+  },
+  "shoes03": {
+   "alpha": false
+  },
+  "bob02": {
+   "alpha": true
+  },
+  "eyebrow006": {
+   "alpha": true
+  },
+  "Eye_blue": {
+   "alpha": true
+  },
+  "Skin_young_caucasian_female": {
+   "alpha": false
+  },
+  "male_worksuit01": {
+   "alpha": false
+  },
+  "shoes01": {
+   "alpha": false
+  },
+  "short03": {
+   "alpha": true
+  },
+  "eyebrow002": {
+   "alpha": true
+  },
+  "Eye_grey": {
+   "alpha": true
+  },
+  "Skin_middleage_caucasian_male": {
+   "alpha": false
+  },
+  "female_elegantsuit01": {
+   "alpha": false
+  },
+  "shoes05": {
+   "alpha": false
+  },
+  "ponytail01": {
+   "alpha": true
+  },
+  "eyebrow007": {
+   "alpha": true
+  },
+  "Eye_green": {
+   "alpha": true
+  },
+  "Skin_middleage_caucasian_female": {
+   "alpha": false
+  },
+  "male_casualsuit04": {
+   "alpha": false
+  },
+  "shoes06": {
+   "alpha": false
+  },
+  "short04": {
+   "alpha": true
+  },
+  "eyebrow003": {
+   "alpha": true
+  },
+  "Skin_young_african_male": {
+   "alpha": false
+  },
+  "female_casualsuit02": {
+   "alpha": false
+  },
+  "long01": {
+   "alpha": true
+  },
+  "eyebrow008": {
+   "alpha": true
+  },
+  "Skin_young_asian_female": {
+   "alpha": false
+  },
+  "male_elegantsuit01": {
+   "alpha": false
+  },
+  "shoes04": {
+   "alpha": false
+  },
+  "short01": {
+   "alpha": true
+  },
+  "eyebrow004": {
+   "alpha": true
+  },
+  "Eye_bluegreen": {
+   "alpha": true
+  },
+  "Skin_young_caucasian_male2": {
+   "alpha": false
+  },
+  "female_sportsuit01": {
+   "alpha": false
+  },
+  "braid01": {
+   "alpha": true
+  },
+  "eyebrow009": {
+   "alpha": true
+  },
+  "Eye_lightblue": {
+   "alpha": true
+  },
+  "Skin_young_caucasian_female2": {
+   "alpha": false
+  },
+  "male_casualsuit03": {
+   "alpha": false
+  },
+  "eyebrow005": {
+   "alpha": true
+  },
+  "Skin_young_asian_male": {
+   "alpha": false
+  },
+  "male_casualsuit05": {
+   "alpha": false
+  },
+  "Skin_old_caucasian_male": {
+   "alpha": false
+  }
+ },
+ "people": [
+  {
+   "name": "Muz1",
+   "female": false,
+   "tris": 6255,
+   "height": 1.824881911277771
+  },
+  {
+   "name": "Zena1",
+   "female": true,
+   "tris": 5955,
+   "height": 1.632638692855835
+  },
+  {
+   "name": "Muz2",
+   "female": false,
+   "tris": 6262,
+   "height": 1.7440537214279175
+  },
+  {
+   "name": "Zena2",
+   "female": true,
+   "tris": 6069,
+   "height": 1.6510192155838013
+  },
+  {
+   "name": "Muz3",
+   "female": false,
+   "tris": 5847,
+   "height": 1.9119352102279663
+  },
+  {
+   "name": "Zena3",
+   "female": true,
+   "tris": 6070,
+   "height": 1.5353572368621826
+  },
+  {
+   "name": "Muz4",
+   "female": false,
+   "tris": 5784,
+   "height": 1.7900927066802979
+  },
+  {
+   "name": "Zena4",
+   "female": true,
+   "tris": 6023,
+   "height": 1.673370361328125
+  },
+  {
+   "name": "Muz5",
+   "female": false,
+   "tris": 6248,
+   "height": 1.6213055849075317
+  },
+  {
+   "name": "Muz6",
+   "female": false,
+   "tris": 6196,
+   "height": 1.7296017408370972
+  }
+ ]
+}
