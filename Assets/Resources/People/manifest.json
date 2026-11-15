@@ -144,7 +144,25 @@
   "male_casualsuit05": {
    "alpha": false
   },
+  "short03_grey": {
+   "alpha": true
+  },
   "Skin_old_caucasian_male": {
+   "alpha": false
+  },
+  "bob01_grey": {
+   "alpha": true
+  },
+  "Skin_old_caucasian_female": {
+   "alpha": false
+  },
+  "short02_grey": {
+   "alpha": true
+  },
+  "short04_grey": {
+   "alpha": true
+  },
+  "male_casualsuit06": {
    "alpha": false
   }
  },
@@ -152,62 +170,156 @@
   {
    "name": "Muz1",
    "female": false,
+   "age": 0.5,
    "tris": 6255,
    "height": 1.824881911277771
   },
   {
    "name": "Zena1",
    "female": true,
+   "age": 0.5,
    "tris": 5955,
    "height": 1.632638692855835
   },
   {
    "name": "Muz2",
    "female": false,
+   "age": 0.72,
    "tris": 6262,
    "height": 1.7440537214279175
   },
   {
    "name": "Zena2",
    "female": true,
+   "age": 0.62,
    "tris": 6069,
    "height": 1.6510192155838013
   },
   {
    "name": "Muz3",
    "female": false,
+   "age": 0.5,
    "tris": 5847,
    "height": 1.9119352102279663
   },
   {
    "name": "Zena3",
    "female": true,
+   "age": 0.55,
    "tris": 6070,
    "height": 1.5353572368621826
   },
   {
    "name": "Muz4",
    "female": false,
+   "age": 0.6,
    "tris": 5784,
    "height": 1.7900927066802979
   },
   {
    "name": "Zena4",
    "female": true,
+   "age": 0.5,
    "tris": 6023,
    "height": 1.673370361328125
   },
   {
    "name": "Muz5",
    "female": false,
+   "age": 0.55,
    "tris": 6248,
    "height": 1.6213055849075317
   },
   {
    "name": "Muz6",
    "female": false,
+   "age": 0.85,
    "tris": 6196,
    "height": 1.7296017408370972
+  },
+  {
+   "name": "Stara1",
+   "female": true,
+   "age": 0.9,
+   "tris": 6201,
+   "height": 1.595556378364563
+  },
+  {
+   "name": "Stara2",
+   "female": true,
+   "age": 0.86,
+   "tris": 6337,
+   "height": 1.614138126373291
+  },
+  {
+   "name": "Stary2",
+   "female": false,
+   "age": 0.92,
+   "tris": 5783,
+   "height": 1.7174932956695557
+  },
+  {
+   "name": "Teen1",
+   "female": false,
+   "age": 0.28,
+   "tris": 6358,
+   "height": 1.5261143445968628
+  },
+  {
+   "name": "Teen2",
+   "female": true,
+   "age": 0.27,
+   "tris": 6173,
+   "height": 1.3833003044128418
+  },
+  {
+   "name": "Teen3",
+   "female": true,
+   "age": 0.3,
+   "tris": 6070,
+   "height": 1.3408591747283936
+  },
+  {
+   "name": "Dite1",
+   "female": false,
+   "age": 0.12,
+   "tris": 6248,
+   "height": 1.1078085899353027
+  },
+  {
+   "name": "Dite2",
+   "female": true,
+   "age": 0.13,
+   "tris": 6042,
+   "height": 1.0855809450149536
+  },
+  {
+   "name": "Dite3",
+   "female": false,
+   "age": 0.1,
+   "tris": 5849,
+   "height": 1.0394964218139648
+  },
+  {
+   "name": "Batole1",
+   "female": true,
+   "age": 0.035,
+   "tris": 5954,
+   "height": 0.7416732907295227
+  },
+  {
+   "name": "Batole2",
+   "female": false,
+   "age": 0.03,
+   "tris": 6252,
+   "height": 0.7334271669387817
+  },
+  {
+   "name": "Mimino",
+   "female": false,
+   "age": 0.0,
+   "tris": 5685,
+   "height": 0.602924108505249
   }
  ]
 }

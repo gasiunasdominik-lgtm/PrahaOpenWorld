@@ -24,7 +24,20 @@ PEOPLE = [  # name, gender, race (african, asian, caucasian), age 0.5 young..1 o
     ("Muz4", 1, (0, 0, 1), 0.60, 0.2, 0.2, "young_caucasian_male2", "male1591", ["male_elegantsuit01", "shoes04"], "short01", "bluegreen", "eyebrow004"),
     ("Zena4", 0, (0, 0, 1), 0.50, -0.3, 0.3, "young_caucasian_female2", "female1605", ["female_sportsuit01", "shoes02"], "braid01", "lightblue", "eyebrow009"),
     ("Muz5", 1, (0, 1, 0), 0.55, -0.2, -0.3, "young_asian_male", "male1591", ["male_casualsuit03", "shoes01"], "short02", "brown", "eyebrow005"),
-    ("Muz6", 1, (0, 0, 1), 0.85, 0.3, -0.3, "old_caucasian_male", "male1591", ["male_casualsuit05", "shoes06"], "short03", "grey", "eyebrow002"),
+    ("Muz6", 1, (0, 0, 1), 0.85, 0.3, -0.3, "old_caucasian_male", "male1591", ["male_casualsuit05", "shoes06"], "short03_grey", "grey", "eyebrow002"),
+    # the age spectrum: seniors, teenagers, children, toddlers, a baby for the prams
+    ("Stara1", 0, (0, 0, 1), 0.90, 0.3, -0.4, "old_caucasian_female", "female1605", ["female_elegantsuit01", "shoes05"], "bob01_grey", "blue", "eyebrow007"),
+    ("Stara2", 0, (0, 0, 1), 0.86, 0.5, -0.2, "old_caucasian_female", "female1605", ["female_casualsuit01", "shoes03"], "short02_grey", "grey", "eyebrow006"),
+    ("Stary2", 1, (0, 0, 1), 0.92, 0.0, -0.2, "old_caucasian_male", "male1591", ["male_worksuit01", "shoes01"], "short04_grey", "brown", "eyebrow001"),
+    ("Teen1", 1, (0, 0, 1), 0.28, -0.3, 0.2, "young_caucasian_male", "male1591", ["male_casualsuit06", "shoes02"], "short02", "blue", "eyebrow003"),
+    ("Teen2", 0, (0, 0, 1), 0.27, -0.3, 0.1, "young_caucasian_female2", "female1605", ["female_sportsuit01", "shoes02"], "ponytail01", "green", "eyebrow008"),
+    ("Teen3", 0, (0, 1, 0), 0.30, -0.2, 0.0, "young_asian_female", "female1605", ["female_casualsuit02", "shoes03"], "long01", "brown", "eyebrow009"),
+    ("Dite1", 1, (0, 0, 1), 0.12, -0.1, 0.0, "young_caucasian_male", "male1591", ["male_casualsuit03", "shoes06"], "short02", "blue", "eyebrow001"),
+    ("Dite2", 0, (0, 0, 1), 0.13, -0.1, 0.0, "young_caucasian_female", "female1605", ["female_casualsuit02", "shoes03"], "braid01", "lightblue", "eyebrow006"),
+    ("Dite3", 1, (1, 0, 0), 0.10, 0.0, 0.0, "young_african_male", "male1591", ["male_casualsuit04", "shoes02"], "short04", "brown", "eyebrow003"),
+    ("Batole1", 0, (0, 0, 1), 0.035, 0.0, 0.0, "young_caucasian_female", "female1605", ["female_casualsuit01", "shoes03"], "bob02", "blue", "eyebrow006"),
+    ("Batole2", 1, (0, 0, 1), 0.03, 0.0, 0.0, "young_caucasian_male", "male1591", ["male_casualsuit02", "shoes02"], "short03", "brown", "eyebrow001"),
+    ("Mimino", 1, (0, 0, 1), 0.0, 0.0, 0.0, "young_caucasian_male", "male1591", ["male_casualsuit03"], "short04", "blue", "eyebrow001"),
 ]
 BUDGET = {"clothes": 1100, "hair": 700, "shoes": 160, "body": 1300}
 
@@ -56,7 +69,10 @@ for b, lst in wj.items():
 def morph(gender, race, age, weight, height):
     c = [list(v) for v in base]
     gw = {"male": gender, "female": 1 - gender}
-    aw = {"young": 1 - (age - 0.5) * 2, "old": (age - 0.5) * 2}
+    # MakeHuman age scale: 0 = 1 year, 0.1875 = 11 years, 0.5 = 25, 1 = 90 (real child proportions, not a scaled adult)
+    if age < 0.1875: aw = {"baby": 1 - age / 0.1875, "child": age / 0.1875}
+    elif age < 0.5: aw = {"child": 1 - (age - 0.1875) / 0.3125, "young": (age - 0.1875) / 0.3125}
+    else: aw = {"young": 1 - (age - 0.5) * 2, "old": (age - 0.5) * 2}
     def add(path, w):
         if w <= 1e-4 or not os.path.exists(path): return
         for i, d in tgt(path).items():
@@ -181,6 +197,7 @@ for (name, gender, race, age, weight, height, skin, body, clothes, hair, eyes, b
     parts = []
     dele = set()
     items = [("clothes" if not cl.startswith("shoes") else "shoes", os.path.join(A, "clothes", cl, cl + ".mhclo")) for cl in clothes]
+    grey = hair.endswith("_grey"); hair = hair.replace("_grey", "")
     items.append(("hair", os.path.join(A, "hair", hair, hair + ".mhclo")))
     items.append(("brows", os.path.join(A, "eyebrows", brows, brows + ".mhclo")))
     items.append(("eyes", os.path.join(A, "eyes", "low-poly", "low-poly.mhclo")))
@@ -193,6 +210,7 @@ for (name, gender, race, age, weight, height, skin, body, clothes, hair, eyes, b
             mm = os.path.join(os.path.dirname(path), meta.get("material", ""))
             tex, alpha = mat_info(mm) if os.path.isfile(mm) else (None, False); tag = os.path.basename(os.path.dirname(path))
         if kind in ("hair", "brows"): alpha = True
+        if kind == "hair" and grey: tag += "_grey"
         ob = make_obj(kind, pts, wts, f, vt, material(tag, tex, alpha, manifest["materials"]))
         decimate(ob, BUDGET.get(kind, 99999)); parts.append(ob)
     # body proxy minus everything hidden under the clothes
@@ -244,14 +262,14 @@ for (name, gender, race, age, weight, height, skin, body, clothes, hair, eyes, b
     bpy.ops.export_scene.fbx(filepath=os.path.join(OUT, name + ".fbx"), use_selection=True, object_types={"ARMATURE", "MESH"},
                              add_leaf_bones=False, bake_anim=False, apply_scale_options="FBX_SCALE_ALL", mesh_smooth_type="FACE",
                              use_armature_deform_only=True, primary_bone_axis="Y", secondary_bone_axis="X")
-    manifest["people"].append({"name": name, "female": gender == 0, "tris": tris, "height": max(v.co.z for v in me.data.vertices)})
+    manifest["people"].append({"name": name, "female": gender == 0, "age": age, "tris": tris, "height": max(v.co.z for v in me.data.vertices)})
     print("PERSON", name, "tris", tris, "verts", len(me.data.vertices), "h", round(manifest["people"][-1]["height"], 2))
 if os.environ.get("PREVIEW"):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     for i, pp in enumerate(manifest["people"]):
         bpy.ops.import_scene.fbx(filepath=os.path.join(OUT, pp["name"] + ".fbx"))
         for o in bpy.context.selected_objects:
-            if o.parent is None: o.location.x = i * 0.8
+            if o.parent is None: o.location.x = i * 0.75
             if o.type == "MESH":
                 for m in o.data.materials:
                     m.use_nodes = True; n = m.node_tree.nodes; bs = n.get("Principled BSDF")
@@ -261,9 +279,9 @@ if os.environ.get("PREVIEW"):
                         m.node_tree.links.new(t.outputs[0], bs.inputs["Base Color"]); m.node_tree.links.new(t.outputs[1], bs.inputs["Alpha"])
                         m.blend_method = "CLIP"
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam")); bpy.context.collection.objects.link(cam)
-    cam.location = (3.6, -7.5, 1.1); cam.rotation_euler = (math.radians(88), 0, 0); bpy.context.scene.camera = cam
+    nn = len(manifest["people"]); cam.location = (nn * 0.375 - 0.4, -nn * 0.95, 1.0); cam.rotation_euler = (math.radians(88), 0, 0); bpy.context.scene.camera = cam
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN")); bpy.context.collection.objects.link(sun); sun.rotation_euler = (0.8, 0.2, 0.4); sun.data.energy = 4
-    sc = bpy.context.scene; sc.render.engine = "BLENDER_EEVEE_NEXT"; sc.render.resolution_x = 1600; sc.render.resolution_y = 700
+    sc = bpy.context.scene; sc.render.engine = "BLENDER_EEVEE_NEXT"; sc.render.resolution_x = 2400; sc.render.resolution_y = 640
     sc.world = bpy.data.worlds.new("w"); sc.world.color = (0.5, 0.55, 0.6)
     sc.render.filepath = os.path.join(OUT, "preview.png"); bpy.ops.render.render(write_still=True)
 json.dump(manifest, open(os.path.join(OUT, "manifest.json"), "w"), indent=1)

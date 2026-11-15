@@ -131,7 +131,8 @@ public class Pedestrians : MonoBehaviour
             else { purpose = "domů"; target = start + new Vector3((float)rng.NextDouble() - 0.5f, 0, (float)rng.NextDouble() - 0.5f) * 800f; name = "domov"; }
             var w = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
             w.gameObject.SetActive(true);
-            w.Begin(s, v, target, purpose, name, door, rng);
+            w.Dress(Walker.RandomKind(rng), rng);
+            w.Begin(s, v, target, purpose, name, door, rng); w.AgeSpeed(rng);
             live.Add(w);
             // ~half of city-centre pedestrians walk in groups of 2–4, abreast at low density (Moussaïd et al. 2010)
             if (rng.NextDouble() < 0.4 && live.Count + 3 < maxPeds)
@@ -142,6 +143,7 @@ public class Pedestrians : MonoBehaviour
                 {
                     var c = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
                     c.gameObject.SetActive(true);
+                    c.Dress(Companion(w.kind, k), rng);
                     c.Begin(s, v, target, purpose, name, door, rng);
                     c.leader = w; c.offset = (k / 2 + 1) * 0.75f * (k % 2 == 0 ? 1f : -1f);
                     c.transform.position = w.transform.position + w.transform.right * c.offset;
@@ -150,6 +152,15 @@ public class Pedestrians : MonoBehaviour
             }
             return;
         }
+    }
+
+    // who walks with a group's leader: families (children, a toddler by the pram), friends of the same age
+    string familyRoll; 
+    string Companion(string leaderKind, int k)
+    {
+        if (k == 0) familyRoll = (leaderKind == "adult" || leaderKind == "pram") && rng.NextDouble() < 0.4 ? "family" : "same";
+        if (familyRoll == "family") return leaderKind == "pram" ? (rng.NextDouble() < 0.5 ? "toddler" : "child") : (k == 0 && rng.NextDouble() < 0.5 ? "adult" : rng.NextDouble() < 0.75 ? "child" : "toddler");
+        return leaderKind == "pram" ? "adult" : leaderKind;
     }
 
     bool TrySpawnTourist(Vector3 focus, Hotspot h)
@@ -168,7 +179,8 @@ public class Pedestrians : MonoBehaviour
             if ((h.b - h.a).sqrMagnitude < 1f) end = h.a + Random.insideUnitCircle * h.r;
             var w = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
             w.gameObject.SetActive(true);
-            w.Begin(s, v, new Vector3(end.x, 0, end.y), "na procházku", h.name, null, rng);
+            w.Dress(Walker.RandomKind(rng), rng);
+            w.Begin(s, v, new Vector3(end.x, 0, end.y), "na procházku", h.name, null, rng); w.AgeSpeed(rng);
             live.Add(w);
             if (rng.NextDouble() < 0.55 && live.Count + 2 < maxPeds * 2) // visitors come in pairs and small groups
             {
@@ -178,6 +190,7 @@ public class Pedestrians : MonoBehaviour
                 {
                     var g = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
                     g.gameObject.SetActive(true);
+                    g.Dress(Companion(w.kind, k), rng);
                     g.Begin(s, v, new Vector3(end.x, 0, end.y), "na procházku", h.name, null, rng);
                     g.leader = w; g.offset = (k + 1) * 0.75f * (k % 2 == 0 ? 1f : -1f);
                     g.transform.position = w.transform.position + w.transform.right * g.offset;
@@ -257,6 +270,40 @@ public class Walker : MonoBehaviour
     enum Mode { Street, Exit, Enter }
     Mode mode; Vector3 freeTarget;
     static readonly List<(int, int)> scratch = new();
+
+    public string kind = "adult"; GameObject pram;
+
+    // Re-dress a pooled walker as another age group (or give them a pram); keeps the model when nothing changes.
+    public void Dress(string k, System.Random rng)
+    {
+        bool wantPram = k == "pram"; string body = wantPram ? "adult" : k;
+        if (cm == null || cm.kind != body)
+        {
+            if (cm) Destroy(cm.gameObject);
+            cm = People.Spawn(transform, rng, body);
+        }
+        if (wantPram && !pram) pram = People.Pram(transform, rng);
+        if (!wantPram && pram) { Destroy(pram); pram = null; }
+        cm.pushing = wantPram; kind = k;
+        // a narrower / wider body to bump into
+        float r = body == "toddler" ? 0.16f : body == "child" ? 0.2f : 0.28f, h = body == "toddler" ? 0.8f : body == "child" ? 1.2f : 1.8f;
+        if (solid) { solid.radius = r; solid.height = h; solid.center = Vector3.up * h / 2; }
+    }
+
+    // age group for a new pedestrian: who is out in a Prague street
+    public static string RandomKind(System.Random rng)
+    {
+        double x = rng.NextDouble();
+        return x < 0.62 ? "adult" : x < 0.80 ? "senior" : x < 0.92 ? "teen" : "pram";
+    }
+
+    // the walking speed of an age group (free speed for adults is set in Begin)
+    public void AgeSpeed(System.Random rng)
+    {
+        if (kind == "senior") speed = Mathf.Min(speed, 0.85f + 0.3f * (float)rng.NextDouble());
+        else if (kind == "pram") speed = Mathf.Min(speed, 1.1f);
+        else if (kind == "teen") speed *= 1.05f;
+    }
 
     public static Walker Create(Transform parent, System.Random rng)
     {

@@ -8,10 +8,14 @@ using UnityEngine;
 public static class People
 {
     static GameObject[] models;
+    static readonly Dictionary<string, List<GameObject>> byKind = new();
+    [System.Serializable] class Person { public string name; public float age, height; public bool female; }
+    [System.Serializable] class Manifest { public Person[] people; }
+    public static string KindOf(float age) => age < 0.015f ? "baby" : age < 0.07f ? "toddler" : age < 0.2f ? "child" : age < 0.4f ? "teen" : age < 0.8f ? "adult" : "senior";
     static readonly Dictionary<string, Material> mats = new();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { models = null; mats.Clear(); }
+    static void ResetStatics() { models = null; mats.Clear(); byKind.Clear(); }
 
     public static bool Available { get { Load(); return models.Length > 0; } }
 
@@ -19,6 +23,15 @@ public static class People
     {
         if (models != null) return;
         models = Resources.LoadAll<GameObject>("People");
+        var ages = new Dictionary<string, float>();
+        var mf = Resources.Load<TextAsset>("People/manifest");
+        if (mf) foreach (var p in JsonUtility.FromJson<Manifest>(mf.text).people) ages[p.name] = p.age;
+        foreach (var m in models)
+        {
+            string k = KindOf(ages.TryGetValue(m.name, out var a) ? a : 0.5f);
+            if (!byKind.TryGetValue(k, out var l)) byKind[k] = l = new List<GameObject>();
+            l.Add(m);
+        }
     }
 
     static Material Mat(string name)
@@ -44,11 +57,76 @@ public static class People
         return m;
     }
 
+    // A pram (Czech "kočárek": deep tub, folding hood, big wheels) with a sleeping baby, pushed ~0.9 m ahead of the walker.
+    static Material pramBody, pramDark, pramChrome;
+    public static GameObject Pram(Transform parent, System.Random rng)
+    {
+        var cols = new[] { new Color(0.12f, 0.14f, 0.2f), new Color(0.25f, 0.27f, 0.28f), new Color(0.35f, 0.22f, 0.25f), new Color(0.55f, 0.55f, 0.52f), new Color(0.16f, 0.24f, 0.2f) };
+        pramDark ??= Gfx.Mat(new Color(0.05f, 0.05f, 0.05f), 0.3f); pramChrome ??= Gfx.Mat(new Color(0.75f, 0.75f, 0.75f), 0.8f);
+        var body = Gfx.Mat(cols[rng.Next(cols.Length)], 0.25f);
+        var mb = new MeshBuilder();
+        float z = 1.0f;
+        // tub: a rounded boat shape (octagonal section), hood folded back over the head end
+        void Ring(Material m, float cz, float len, float cy, float rx, float ry, float a0, float a1, int seg)
+        {
+            for (int i = 0; i < seg; i++)
+            {
+                float t0 = Mathf.Lerp(a0, a1, i / (float)seg), t1 = Mathf.Lerp(a0, a1, (i + 1f) / seg);
+                Vector3 P(float t, float dz) => new Vector3(Mathf.Cos(t) * rx, cy + Mathf.Sin(t) * ry, cz + dz);
+                var o = new Vector3(Mathf.Cos((t0 + t1) / 2), Mathf.Sin((t0 + t1) / 2), 0);
+                mb.Poly(m, new[] { P(t0, -len / 2), P(t1, -len / 2), P(t1, len / 2), P(t0, len / 2) }, null, o);
+                mb.Poly(m, new[] { P(t0, -len / 2), P(t1, -len / 2), new Vector3(0, cy, cz - len / 2) }, null, Vector3.back);
+                mb.Poly(m, new[] { P(t0, len / 2), P(t1, len / 2), new Vector3(0, cy, cz + len / 2) }, null, Vector3.forward);
+            }
+        }
+        Ring(body, z, 0.74f, 0.72f, 0.22f, 0.2f, Mathf.PI, Mathf.PI * 2f, 8);           // tub (lower half)
+        Ring(body, z - 0.2f, 0.34f, 0.72f, 0.23f, 0.3f, 0f, Mathf.PI, 8);                // hood (upper half, over the head at the parent's end)
+        mb.Box(pramDark, new Vector3(0, 0.45f, z), new Vector3(0.3f, 0.03f, 0.62f));      // chassis
+        foreach (float sz in new[] { -0.24f, 0.24f }) mb.Box(pramChrome, new Vector3(0, 0.5f, z + sz), new Vector3(0.025f, 0.12f, 0.025f));
+        // wheels: round, with a dark tyre and a chrome hub
+        void Wheel(Vector3 c, float r)
+        {
+            const int Seg = 14; float hw = 0.022f;
+            for (int i = 0; i < Seg; i++)
+            {
+                float t0 = i * Mathf.PI * 2f / Seg, t1 = (i + 1) * Mathf.PI * 2f / Seg;
+                Vector3 P(float t, float x, float rr) => c + new Vector3(x, Mathf.Sin(t) * rr, Mathf.Cos(t) * rr);
+                mb.Poly(pramDark, new[] { P(t0, -hw, r), P(t1, -hw, r), P(t1, hw, r), P(t0, hw, r) }, null, new Vector3(0, Mathf.Sin((t0 + t1) / 2), Mathf.Cos((t0 + t1) / 2)));
+                foreach (float sx in new[] { -hw, hw })
+                {
+                    mb.Poly(pramDark, new[] { P(t0, sx, r), P(t1, sx, r), P(t1, sx, r * 0.8f), P(t0, sx, r * 0.8f) }, null, new Vector3(sx, 0, 0));
+                    mb.Poly(pramChrome, new[] { P(t0, sx, r * 0.8f), P(t1, sx, r * 0.8f), c + new Vector3(sx, 0, 0) }, null, new Vector3(sx, 0, 0));
+                }
+            }
+        }
+        foreach (float sx in new[] { -0.25f, 0.25f }) { Wheel(new Vector3(sx, 0.16f, z - 0.27f), 0.16f); Wheel(new Vector3(sx, 0.14f, z + 0.27f), 0.14f); }
+        foreach (float sx in new[] { -0.25f, 0.25f }) mb.Box(pramDark, new Vector3(sx * 0.6f, 0.3f, z), new Vector3(0.02f, 0.02f, 0.62f), Quaternion.Euler(0, 0, 0));
+        // handle: two struts up and back from the tub to a bar at the parent's hands
+        mb.Box(pramChrome, new Vector3(0, 1.0f, z - 0.62f), new Vector3(0.48f, 0.03f, 0.03f));
+        foreach (float sx in new[] { -0.22f, 0.22f })
+            mb.Box(pramChrome, new Vector3(sx, 0.83f, z - 0.5f), new Vector3(0.022f, 0.4f, 0.022f), Quaternion.Euler(-35f, 0, 0));
+        var go = mb.Build("Kocarek", parent, false);
+        // the baby lies in the tub under the hood: head end at the hood, a blanket over the body
+        Load();
+        if (byKind.TryGetValue("baby", out var babies) && babies.Count > 0)
+        {
+            var hm = Spawn(go.transform, rng, "baby"); hm.enabled = false;
+            // on its back, head under the hood towards the parent: up -> back, face -> up
+            var bt = hm.transform; bt.localRotation = Quaternion.Euler(-90f, 0, 0);
+            bt.localPosition = new Vector3(0, 0.66f, z + 0.28f);
+            foreach (var r in bt.GetComponentsInChildren<SkinnedMeshRenderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mb = new MeshBuilder(); mb.Box(Gfx.Mat(new Color(0.9f, 0.88f, 0.8f), 0.1f), new Vector3(0, 0.76f, z + 0.1f), new Vector3(0.38f, 0.05f, 0.5f));
+            mb.Build("Deka", go.transform, false);
+        }
+        return go;
+    }
+
     // A random person under parent, feet at the parent's origin, facing +Z.
-    public static HumanMotion Spawn(Transform parent, System.Random rng)
+    public static HumanMotion Spawn(Transform parent, System.Random rng, string kind = "adult")
     {
         Load();
-        var src = models[rng.Next(models.Length)];
+        var pool = byKind.TryGetValue(kind, out var kl) && kl.Count > 0 ? kl : byKind.TryGetValue("adult", out var a) ? a : new List<GameObject>(models);
+        var src = pool[rng.Next(pool.Count)];
         var holder = new GameObject("Clovek").transform; holder.SetParent(parent, false);
         var go = Object.Instantiate(src, holder, false); go.name = src.name;
         // face +Z: the toes point forward
@@ -88,6 +166,10 @@ public static class People
             if (l.Length >= 2) { l[0].screenRelativeTransitionHeight = 0.22f; l[1].screenRelativeTransitionHeight = 0.012f; lod.SetLODs(l); }
         }
         var hm = holder.gameObject.AddComponent<HumanMotion>();
+        hm.kind = kind;
+        // shorter legs, quicker steps (cadence ~ 1/sqrt(leg length)); the old walk slower and a little stooped
+        if (kind == "child") hm.stepFreq = 2.4f; else if (kind == "toddler") hm.stepFreq = 3.0f; else if (kind == "teen") hm.stepFreq = 2.0f;
+        if (kind == "senior") { hm.stepFreq = 1.65f; hm.stoop = 7f; }
         hm.Bind();
         return hm;
     }
@@ -97,7 +179,9 @@ public static class People
 // (right/up/forward) and converted into each bone's parent frame, so the bone roll from Blender doesn't matter.
 public class HumanMotion : MonoBehaviour
 {
-    public float maxSpeed = 3f, stepFreq = 1.9f;
+    public float maxSpeed = 3f, stepFreq = 1.9f, stoop;
+    public bool pushing; // hands on a pram's handle
+    public string kind = "adult";
     public bool Grounded = true;
     class B { public Transform t; public Quaternion bind, P, Pinv; public Vector3 dir, pos; }
     readonly Dictionary<string, B> bones = new();
@@ -173,15 +257,24 @@ public class HumanMotion : MonoBehaviour
         // arms hang, swing against the legs, elbows a little bent
         float arm = 20f * amp + 2f;
         float breathe = Mathf.Sin(Time.time * 1.6f) * 1.2f;
-        Set(armL, Quaternion.AngleAxis(s * arm, R) * armRestL);
-        Set(armR, Quaternion.AngleAxis(-s * arm, R) * armRestR);
-        Bend(foreL, armL, handL, 14f + Mathf.Max(0f, -s) * 20f * amp);
-        Bend(foreR, armR, handR, 14f + Mathf.Max(0f, s) * 20f * amp);
+        if (pushing)
+        {
+            // upper arms forward and down to the handle, elbows bent: the hands rest on the bar at hip height
+            Set(armL, Quaternion.AngleAxis(-30f, R) * armRestL); Set(armR, Quaternion.AngleAxis(-30f, R) * armRestR);
+            Bend(foreL, armL, handL, 40f); Bend(foreR, armR, handR, 40f);
+        }
+        else
+        {
+            Set(armL, Quaternion.AngleAxis(s * arm, R) * armRestL);
+            Set(armR, Quaternion.AngleAxis(-s * arm, R) * armRestR);
+            Bend(foreL, armL, handL, 14f + Mathf.Max(0f, -s) * 20f * amp);
+            Bend(foreR, armR, handR, 14f + Mathf.Max(0f, s) * 20f * amp);
+        }
         // pelvis turns with the stride, the chest counter-rotates, a soft bob (lowest at heel strike)
         Set(hips, Quaternion.AngleAxis(s * 5f * amp, U) * Quaternion.AngleAxis(c * 2.5f * amp, F));
         if (hips != null) hips.t.localPosition = hips.pos + hips.Pinv * (Vector3.up * ((Mathf.Abs(c) - 0.6f) * 0.035f * amp));
-        Set(spine, Quaternion.AngleAxis(lean, R) * Quaternion.AngleAxis(-s * 7f * amp, U));
+        Set(spine, Quaternion.AngleAxis(lean + stoop + (pushing ? 6f : 0f), R) * Quaternion.AngleAxis(-s * 7f * amp, U));
         Set(spine2, Quaternion.AngleAxis(breathe, R));
-        Set(head, Quaternion.AngleAxis(-lean * 0.6f, R) * Quaternion.AngleAxis(s * 2f * amp, U));
+        Set(head, Quaternion.AngleAxis(-lean * 0.6f - stoop * 0.7f, R) * Quaternion.AngleAxis(s * 2f * amp, U));
     }
 }

@@ -135,6 +135,7 @@ public static class MapBuilder
         BuildBuildings(root);
         PlacesToDoors();
         BuildMetroEntrances(root);
+        BuildSteps(root, Gfx.Pbr("Setts", 0.1f, 1.5f, new Color(0.92f, 0.9f, 0.86f)), Gfx.Pbr("Wall", 0.05f, 2f, new Color(0.78f, 0.75f, 0.7f)));
         BuildTrees(root);
         BuildBounds(root);
     }
@@ -657,6 +658,65 @@ public static class MapBuilder
         }
         for (int i = 1; i + 1 < idx.Count; i++) res.Add(new[] { ring[idx[0]], ring[idx[i]], ring[idx[i + 1]] });
         return res;
+    }
+
+    [Serializable] class Steps { public string n; public float w; public int c; public float[] p; }
+    [Serializable] class StepsList { public Steps[] items; }
+
+    // Public stairways from OSM (Zámecké schody, Radnické schody, Nebozízek...): stone steps on the terrain's slope,
+    // ~16.5 cm risers, stepped side walls on the bigger flights. The steps are their own collider.
+    static void BuildSteps(Transform root, Material tread, Material wall)
+    {
+        var ta = Resources.Load<TextAsset>("PrahaSteps"); if (ta == null) return;
+        var list = JsonUtility.FromJson<StepsList>("{\"items\":" + ta.text + "}").items;
+        var tiles = new Dictionary<Vector2Int, MeshBuilder>();
+        int built = 0, stepsN = 0;
+        foreach (var st in list)
+        {
+            int n = st.p.Length / 2; if (n < 2) continue;
+            // inside a building (passages like Lucerna): its walls are there already
+            float mx = st.p[n / 2 * 2], mz = st.p[n / 2 * 2 + 1];
+            if (n == 2) { mx = (st.p[0] + st.p[2]) / 2; mz = (st.p[1] + st.p[3]) / 2; }
+            if (Physics.Raycast(new Vector3(mx, 300f, mz), Vector3.down, out var hit, 600f) && hit.collider.name.StartsWith("DomyIpr")) continue;
+            float h0 = Height(st.p[0], st.p[1]), h1 = Height(st.p[2 * n - 2], st.p[2 * n - 1]);
+            float len = 0; for (int i = 1; i < n; i++) len += Vector2.Distance(new Vector2(st.p[2 * i - 2], st.p[2 * i - 1]), new Vector2(st.p[2 * i], st.p[2 * i + 1]));
+            float rise = Mathf.Abs(h1 - h0); if (rise < 0.3f || len < 1f) continue;
+            if (h0 < -0.5f || h1 < -0.5f) continue; // into the river: an embankment flight our coarse bank doesn't have
+            float w = st.w; bool walls = rise > 1.5f && w >= 2f;
+            var key = new Vector2Int(Mathf.FloorToInt(mx / 300f), Mathf.FloorToInt(mz / 300f));
+            if (!tiles.TryGetValue(key, out var mb)) tiles[key] = mb = new MeshBuilder();
+            for (int i = 1; i < n; i++)
+            {
+                var a = new Vector3(st.p[2 * i - 2], 0, st.p[2 * i - 1]); var b = new Vector3(st.p[2 * i], 0, st.p[2 * i + 1]);
+                float L = Vector3.Distance(a, b); if (L < 0.3f) continue;
+                a.y = Height(a.x, a.z); b.y = Height(b.x, b.z);
+                var dir = (b - a); dir.y = 0; dir.Normalize(); var rot = Quaternion.LookRotation(dir);
+                var side = Vector3.Cross(Vector3.up, dir);
+                int k = Mathf.RoundToInt(Mathf.Abs(b.y - a.y) / 0.165f);
+                if (k == 0) // landing: a flat slab
+                {
+                    var c = (a + b) / 2; float top = Mathf.Max(a.y, b.y) + 0.05f;
+                    mb.Box(tread, new Vector3(c.x, (top + Mathf.Min(a.y, b.y) - 0.6f) / 2, c.z), new Vector3(w, top - Mathf.Min(a.y, b.y) + 0.6f, L), rot, 1.5f);
+                    continue;
+                }
+                float riser = (b.y - a.y) / k, run = L / k;
+                for (int j = 0; j < k; j++)
+                {
+                    // step j occupies [j, j+1] runs; its top is the higher of its two edges so the flight never sinks into the slope
+                    float top = a.y + riser * (riser > 0 ? j + 1 : j) + 0.03f;
+                    var c = a + dir * (run * (j + 0.5f)); float bottom = Height(c.x, c.z) - 0.6f;
+                    float hgt = Mathf.Max(0.2f, top - bottom);
+                    mb.Box(tread, new Vector3(c.x, bottom + hgt / 2, c.z), new Vector3(w, hgt, run + 0.02f), rot, 1.5f);
+                    if (walls)
+                        foreach (float sd in new[] { -1f, 1f })
+                            mb.Box(wall, new Vector3(c.x, bottom + (hgt + 0.85f) / 2, c.z) + side * sd * (w / 2 + 0.2f), new Vector3(0.4f, hgt + 0.85f, run + 0.02f), rot, 2f);
+                    stepsN++;
+                }
+            }
+            built++;
+        }
+        foreach (var kv in tiles) kv.Value.Build($"Schody_{kv.Key.x}_{kv.Key.y}", root, true);
+        Debug.Log($"[Mapa] schodiště {built} ({stepsN} stupňů)");
     }
 
     static void BuildMetroEntrances(Transform root)
