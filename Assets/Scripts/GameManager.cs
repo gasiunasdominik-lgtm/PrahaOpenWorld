@@ -72,7 +72,8 @@ public class GameManager : MonoBehaviour
         new GameObject("Majetek").AddComponent<Property>();
         gameObject.AddComponent<Inspect>();
         new GameObject("Holubi").AddComponent<Pigeons>();
-        new GameObject("Lode").AddComponent<Boats>(); // excursion boats, pedal boats, moored boats on the Vltava
+        new GameObject("Lode").AddComponent<Boats>();
+        new GameObject("Mapa").AddComponent<BigMap>(); // M: full city map // excursion boats, pedal boats, moored boats on the Vltava
 
         rig = new GameObject("CameraRig").AddComponent<CameraRig>();
         rig.Setup();
@@ -282,6 +283,7 @@ public class GameManager : MonoBehaviour
         }
 
         playTime += Time.deltaTime;
+        if (BigMap.IsOpen) return; // the map holds the game still; its own Esc closes it
         if (kb != null && kb.escapeKey.wasPressedThisFrame) { Pause(); return; }
 
         Vector3 focus = currentCar ? currentCar.transform.position : player.transform.position;
