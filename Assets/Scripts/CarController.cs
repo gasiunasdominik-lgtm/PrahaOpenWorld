@@ -12,6 +12,7 @@ public class CarController : MonoBehaviour
     public Transform[] wheels = new Transform[4];
     public Transform camTarget, seat;
     public bool driven;
+    public bool ai; public float aiThrottle, aiSteer; // set by Driver (city traffic)
 
     // Debug-input hook for automated verification
     public float debugThrottle, debugSteer;
@@ -76,6 +77,7 @@ public class CarController : MonoBehaviour
             }
             if (debugThrottle != 0 || debugSteer != 0) { tIn = debugThrottle; sIn = debugSteer; }
         }
+        else if (ai) { tIn = aiThrottle; sIn = aiSteer; }
         throttle = Mathf.MoveTowards(throttle, tIn, Time.deltaTime * 4f);
         steer = Mathf.MoveTowards(steer, sIn, Time.deltaTime * (sIn == 0 ? 5f : 3f));
 
@@ -92,9 +94,9 @@ public class CarController : MonoBehaviour
         if (engineSrc)
         {
             float n = NormSpeed;
-            float rpm = driven ? 0.75f + n * 1.5f + Mathf.Abs(throttle) * 0.2f : 0.6f;
+            float rpm = driven || ai ? 0.75f + n * 1.5f + Mathf.Abs(throttle) * 0.2f : 0.6f;
             engineSrc.pitch = Mathf.Lerp(engineSrc.pitch, rpm, Time.deltaTime * 5f);
-            GameAudio.I.SetBaseVolume(engineSrc, driven ? 0.35f + n * 0.35f : 0f);
+            GameAudio.I.SetBaseVolume(engineSrc, driven ? 0.35f + n * 0.35f : ai ? 0.1f + n * 0.25f : 0f);
         }
     }
 
@@ -127,7 +129,7 @@ public class CarController : MonoBehaviour
 
         bool handbrake = driven && Keyboard.current != null && Keyboard.current.spaceKey.isPressed;
         float a = 0f;
-        if (driven)
+        if (driven || (ai && Mathf.Abs(throttle) > 0.01f))
         {
             if (throttle > 0.01f)
                 a = fwdSpeed < -0.5f ? brakeAccel * throttle : motorAccel * throttle * Mathf.Clamp01(1f - fwdSpeed / maxSpeed);
@@ -180,7 +182,7 @@ public class CarController : MonoBehaviour
     public static CarController Build(Vector3 pos, float yaw, Color paint, int style)
     {
         // tagged so the camera deoccluder ignores the car's own body
-        var root = new GameObject("Auto") { tag = "Player" };
+        var root = new GameObject("Auto") { tag = "Player", layer = Traffic.CarLayer };
         root.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, yaw, 0));
         var col = root.AddComponent<BoxCollider>();
         bool van = style == 2;

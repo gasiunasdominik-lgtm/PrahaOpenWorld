@@ -65,6 +65,9 @@ public class GameManager : MonoBehaviour
             i++;
         }
 
+        new GameObject("Doprava").AddComponent<Traffic>();
+        new GameObject("MHD").AddComponent<Transit>();
+
         rig = new GameObject("CameraRig").AddComponent<CameraRig>();
         rig.Setup();
         rig.FollowPlayer(player.camTarget);
@@ -270,6 +273,7 @@ public class GameManager : MonoBehaviour
         hud.SetMinimap(currentCar ? currentCar.transform.eulerAngles.y : player.transform.eulerAngles.y);
         hud.SetSpeed(currentCar != null, currentCar ? currentCar.SpeedKmh : 0f);
 
+        if (Transit.I.Interact(kb, hud, this)) { CheckLandmarks(focus); UpdateDust(); return; }
         var near = currentCar ? null : NearestCar(4f);
         hud.promptText.text = currentCar ? "[E] VYSTOUPIT    [H] TROUBIT    [R] OTOČIT AUTO" : near ? "[E] NASTOUPIT" : "";
         if (kb != null && kb.eKey.wasPressedThisFrame)
@@ -287,6 +291,7 @@ public class GameManager : MonoBehaviour
         CarController best = null; float bd = maxDist * maxDist;
         foreach (var c in cars)
         {
+            if (!c.gameObject.activeInHierarchy) continue; // pooled traffic car
             float d = (c.transform.position - player.transform.position).sqrMagnitude;
             if (d < bd) { bd = d; best = c; }
         }

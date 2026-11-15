@@ -115,6 +115,15 @@ public class CameraRig : MonoBehaviour
         orbit.TrackerSettings.PositionDamping = new Vector3(0.6f, 0.4f, 0.6f);
     }
 
+    public void FollowTarget(Transform t, float radius, float yaw)
+    {
+        car = null; follow = t;
+        playCam.Follow = t; playCam.LookAt = t;
+        targetRadius = radius;
+        orbit.TrackerSettings.PositionDamping = new Vector3(0.3f, 0.3f, 0.3f);
+        orbit.HorizontalAxis.Value = yaw;
+    }
+
     public void FollowCar(CarController c)
     {
         car = c;

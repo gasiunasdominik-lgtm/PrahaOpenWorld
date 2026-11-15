@@ -18,6 +18,7 @@ public class Pedestrians : MonoBehaviour
     void Awake()
     {
         I = this;
+        Physics.IgnoreLayerCollision(Traffic.CarLayer, Traffic.BodyLayer); // cars pass through bodies; the trigger decides what a hit does
         var st = MapBuilder.D.streets;
         for (int s = 0; s < st.Length; s++)
             for (int v = 0; v < st[s].p.Length / 2; v++)
@@ -168,12 +169,11 @@ public class Walker : MonoBehaviour
             else if (n.Contains("Scarf")) r.enabled = false; // the red scarf is the hero's signature
         }
         var w = go.AddComponent<Walker>(); w.cm = cm;
-        // solid body: blocks the player; cars ignore it and are sensed by the trigger instead (a kinematic body would stop a car dead)
-        w.solid = go.AddComponent<CapsuleCollider>(); w.solid.center = Vector3.up * 0.9f; w.solid.height = 1.8f; w.solid.radius = 0.28f;
+        // solid body (own layer): blocks the player; cars pass through it and are sensed by the trigger instead (a kinematic body would stop a car dead)
+        var body = new GameObject("Telo") { layer = Traffic.BodyLayer }; body.transform.SetParent(go.transform, false);
+        w.solid = body.AddComponent<CapsuleCollider>(); w.solid.center = Vector3.up * 0.9f; w.solid.height = 1.8f; w.solid.radius = 0.28f;
         var sense = go.AddComponent<CapsuleCollider>(); sense.isTrigger = true; sense.center = Vector3.up * 0.9f; sense.height = 1.8f; sense.radius = 0.7f;
         w.rb = go.AddComponent<Rigidbody>(); w.rb.isKinematic = true; w.rb.mass = 75f;
-        foreach (var car in GameManager.I.cars)
-            foreach (var c in car.GetComponentsInChildren<Collider>()) Physics.IgnoreCollision(c, w.solid);
         return w;
     }
 
@@ -185,7 +185,7 @@ public class Walker : MonoBehaviour
         u = 0f; dodge = Vector3.zero; down = 0f;
         speed = 1.2f + (float)rng.NextDouble() * 0.5f;
         float hw = MapBuilder.D.streets[s].w / 2f;
-        side = MapBuilder.D.streets[s].foot ? ((float)rng.NextDouble() * 2f - 1f) * hw * 0.7f : (rng.Next(2) == 0 ? 1 : -1) * (hw - 1f);
+        side = MapBuilder.D.streets[s].foot ? ((float)rng.NextDouble() * 2f - 1f) * hw * 0.7f : (rng.Next(2) == 0 ? 1 : -1) * (hw - 0.4f);
         Stand();
         if (door.HasValue) { mode = Mode.Exit; freeTarget = Point(street, vtx, vtx + dir, 0f); transform.position = lastPos = door.Value + Vector3.up * 0.05f; }
         else { mode = Mode.Street; transform.position = lastPos = Point(street, vtx, vtx + dir, 0f); }

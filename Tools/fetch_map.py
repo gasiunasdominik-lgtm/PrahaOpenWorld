@@ -58,6 +58,27 @@ def inside(px, pz, ring):
         if (z1 > pz) != (z2 > pz) and px < (x2 - x1) * (pz - z1) / (z2 - z1) + x1: c = not c
     return c
 
+def metro_order(m):
+    """Stanice každé linky seřazené podél trati: přiřadí stanice k lince (do 200 m od trati),
+    pak je řetězí od krajní stanice k nejbližší další. shortcut: řetězení předpokládá linku bez větví."""
+    st = {}
+    for s in m["stations"]: st.setdefault(s["n"], s)  # jedna stanice může být v OSM vícekrát
+    m["stations"] = list(st.values())
+    order = {}
+    for ref in sorted({l["ref"] for l in m["lines"]}):
+        pts = [(l["p"][i], l["p"][i + 1]) for l in m["lines"] if l["ref"] == ref for i in range(0, len(l["p"]), 2)]
+        on = [i for i, s in enumerate(m["stations"])
+              if min((s["p"][0] - x) ** 2 + (s["p"][1] - z) ** 2 for x, z in pts) < 200 ** 2]
+        if len(on) < 2: continue
+        d = lambda a, b: (m["stations"][a]["p"][0] - m["stations"][b]["p"][0]) ** 2 + (m["stations"][a]["p"][1] - m["stations"][b]["p"][1]) ** 2
+        cx = sum(m["stations"][i]["p"][0] for i in on) / len(on); cz = sum(m["stations"][i]["p"][1] for i in on) / len(on)
+        cur = max(on, key=lambda i: (m["stations"][i]["p"][0] - cx) ** 2 + (m["stations"][i]["p"][1] - cz) ** 2)
+        chain, rest = [cur], set(on) - {cur}
+        while rest:
+            cur = min(rest, key=lambda i: d(cur, i)); chain.append(cur); rest.discard(cur)
+        order[ref] = chain
+    m["order"] = [{"ref": r, "color": next(l["color"] for l in m["lines"] if l["ref"] == r), "s": c} for r, c in order.items()]
+
 def main():
     print("Metropolitní plán…")
     streets = mpp("MPP_CUR_MPP_200_ULICECESTY_L", "typ,hierarchie", 0.00002)
@@ -75,6 +96,7 @@ way["natural"="water"]({s},{w},{n},{e});relation["natural"="water"]({s},{w},{n},
 way["railway"="tram"]({s},{w},{n},{e});
 relation["route"="subway"]({s},{w},{n},{e});node["railway"="subway_entrance"]({s},{w},{n},{e});
 node["station"="subway"]({s},{w},{n},{e});
+node["highway"="traffic_signals"]({s},{w},{n},{e});node["railway"="tram_stop"]({s},{w},{n},{e});
 node["amenity"~"^(pub|bar|restaurant|cafe|fast_food|biergarten)$"]({s},{w},{n},{e});
 node["shop"]({s},{w},{n},{e});node["office"]({s},{w},{n},{e}););out geom;"""
     osm = get("https://overpass-api.de/api/interpreter", urllib.parse.urlencode({"data": q}).encode())["elements"]
@@ -178,6 +200,10 @@ node["shop"]({s},{w},{n},{e});node["office"]({s},{w},{n},{e}););out geom;"""
             "entrances": [{"n": el["tags"].get("name", ""), "p": list(proj(el["lon"], el["lat"]))} for el in osm
                           if el["type"] == "node" and el.get("tags", {}).get("railway") == "subway_entrance"],
         },
+        "signals": [{"p": list(proj(el["lon"], el["lat"]))} for el in osm
+                    if el["type"] == "node" and el.get("tags", {}).get("highway") == "traffic_signals"],
+        "tramStops": [{"n": el["tags"].get("name", ""), "p": list(proj(el["lon"], el["lat"]))} for el in osm
+                      if el["type"] == "node" and el.get("tags", {}).get("railway") == "tram_stop"],
         "buildings": buildings,
         # Místa: atom s funkcí (druh) a jménem; shortcut: jen body, podniky zakreslené jako plochy chybí
         "places": [{"n": el["tags"].get("name", ""), "k": el["tags"].get("amenity") or ("shop" if "shop" in el["tags"] else "office"),
@@ -185,6 +211,7 @@ node["shop"]({s},{w},{n},{e});node["office"]({s},{w},{n},{e}););out geom;"""
                    and ("shop" in el.get("tags", {}) or "office" in el.get("tags", {})
                         or el.get("tags", {}).get("amenity") in ("pub", "bar", "restaurant", "cafe", "fast_food", "biergarten"))],
     }
+    metro_order(data["metro"])
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as fh: json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
     print(f"Hotovo: {OUT} ({os.path.getsize(OUT)/1e6:.1f} MB), mapa {W}x{H} buněk, budov {len(buildings)}, metro úseků {len(data['metro']['lines'])} / stanic {len(data['metro']['stations'])} / vstupů {len(data['metro']['entrances'])}, ulic {len(data['streets'])}, míst {len(data['places'])}, hladina řeky {river} m n. m.")

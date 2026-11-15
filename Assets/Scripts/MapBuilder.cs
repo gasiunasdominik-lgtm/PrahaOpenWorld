@@ -9,8 +9,9 @@ public static class MapBuilder
 {
     [Serializable] public class Poly { public string n, k; public float w; public bool foot; public float h; public float[] p; }
     [Serializable] public class Terrain { public float x0, z0, cell; public int w, h; public string dm, lu; }
-    [Serializable] public class Metro { public float depth; public Poly[] stations, entrances; }
-    [Serializable] public class Data { public string credits; public Terrain terrain; public Poly[] streets, squares, parks, districts, trams, buildings, places; public Metro metro; }
+    [Serializable] public class Line { public string @ref, color; public int[] s; }
+    [Serializable] public class Metro { public float depth; public Poly[] stations, entrances; public Line[] order; }
+    [Serializable] public class Data { public string credits; public Terrain terrain; public Poly[] streets, squares, parks, districts, trams, buildings, places, signals, tramStops; public Metro metro; }
 
     public static Data D;
     public static readonly List<float[]> StreetY = new(); // walkable height per street vertex (bridges included)
