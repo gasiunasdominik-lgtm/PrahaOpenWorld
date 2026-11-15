@@ -102,6 +102,7 @@ public static class CityBuilder
         // Old Town Square: each piece on its own real spot (OSM footprints), not the square model as one block
         if (!real) Place(root, "TynskyChram", t => BuildOldTownSquare(t, 0), new Vector3(318, 0, 0), new Vector3(786, 0, 124)); // west front behind the Týn school
         if (!real) Place(root, "Radnice", t => BuildOldTownSquare(t, 1), new Vector3(191, 0, -29), new Vector3(663.5f, 0, 63.5f), 90f); // tower; orloj faces south
+        if (real) PlaceOrloj(root);
         Place(root, "HusuvPomnik", t => BuildOldTownSquare(t, 2), new Vector3(255, 0, 0), new Vector3(700, 0, 123));
         if (!real) Place(root, "SvMikulas", BuildStNicholas, new Vector3(-210, 0, -45), Landmarks[3].pos);
         if (!real) Place(root, "ZizkovskaVez", BuildZizkov, new Vector3(705, 0, 240), Landmarks[4].pos);
@@ -293,6 +294,9 @@ public static class CityBuilder
             mb.Cylinder(mStone, t0 + new Vector3(sx, 53f, sz), 0.9f, 3.5f, 8);
             mb.Cone(mSlate, t0 + new Vector3(sx, 56.5f, sz), 1.15f, 5f, 8);
         }
+        }
+        if (part == 1 || part == 3)
+        {
         ClockFace(mb, new Vector3(196.12f, 11f, -29f), 3.1f, true);
         ClockFace(mb, new Vector3(196.12f, 4.6f, -29f), 2.4f, false);
         mb.Box(mStone, new Vector3(196.5f, 16.5f, -29f), new Vector3(1f, 2.6f, 8.5f));
@@ -315,6 +319,15 @@ public static class CityBuilder
         }
         }
         mb.Build(root.name, root, true);
+    }
+
+    // The real IPR tower has no clock: hang ours on its south wall, found by a ray at the clock's height.
+    static void PlaceOrloj(Transform root)
+    {
+        Physics.SyncTransforms(); float z = 63.5f; // the model's wall is 5.12 m south of the tower axis
+        if (Physics.Raycast(new Vector3(663.5f, MapBuilder.Height(663.5f, 63.5f) + 11f, 63.5f - 25f), Vector3.forward, out var hit, 25f, ~0, QueryTriggerInteraction.Ignore))
+            z = hit.point.z - 0.1f + 5.12f;
+        Place(root, "Orloj", t => BuildOldTownSquare(t, 3), new Vector3(191, 0, -29), new Vector3(663.5f, 0, z), 90f);
     }
 
     static void ClockFace(MeshBuilder mb, Vector3 c, float r, bool astro)
