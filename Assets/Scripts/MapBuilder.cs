@@ -79,6 +79,7 @@ public static class MapBuilder
         var cobble = Gfx.Mat(Palette.CobbleDark, 0.1f, Gfx.CobbleTex);
         var stone = Gfx.Mat(Palette.GothicStone, 0.08f);
         var rail = Gfx.Mat(Color.Lerp(Palette.Asphalt, Palette.Slate, 0.6f), 0.5f);
+        BuildIprBridges(root); // before the streets: their stretches over water take the real deck's height
         var streets = new MeshBuilder();
         int k = 0;
         StreetY.Clear();
@@ -156,6 +157,36 @@ public static class MapBuilder
             float da = a >= 0 ? Vector3.Distance(pts[a], pts[i]) : 0, db = b < n ? Vector3.Distance(pts[b], pts[i]) : 0;
             pts[i].y = Mathf.Max(1.5f, Mathf.Lerp(ha, hb, da + db > 0 ? da / (da + db) : 0.5f));
         }
+        // over water, on a real IPR bridge: walk its deck and leave the looks to the model (no flat strip, no parapet boxes).
+        // The deck also carries the street over dry land next to the river (Kampa): spread along the street from a wet hit.
+        var deckY = new float[n]; var onDeck = new bool[n];
+        for (int i = 0; i < n; i++)
+        {
+            deckY[i] = float.NaN;
+            var dir = pts[Mathf.Min(i + 1, n - 1)] - pts[Mathf.Max(i - 1, 0)]; var sd = Vector3.Cross(Vector3.up, new Vector3(dir.x, 0, dir.z)).normalized;
+            foreach (float o in new[] { 0f, 3f, -3f }) // a point just off the deck's edge still belongs to it
+                if (Physics.Raycast(new Vector3(pts[i].x + sd.x * o, 200f, pts[i].z + sd.z * o), Vector3.down, out var hit, 400f) && hit.collider.name.StartsWith("IprMosty"))
+                { deckY[i] = hit.point.y; break; }
+            onDeck[i] = wet[i] && !float.IsNaN(deckY[i]);
+        }
+        for (int pass = 0; pass < 2; pass++)
+            for (int k = 0; k < n; k++)
+            {
+                int i = pass == 0 ? k : n - 1 - k, j = pass == 0 ? i - 1 : i + 1;
+                if (j >= 0 && j < n && onDeck[j] && !onDeck[i] && !float.IsNaN(deckY[i])) onDeck[i] = true;
+            }
+        var cum = new float[n];
+        for (int i = 1; i < n; i++) cum[i] = cum[i - 1] + Vector2.Distance(new Vector2(pts[i].x, pts[i].z), new Vector2(pts[i - 1].x, pts[i - 1].z));
+        // the 8 m terrain smooths away the fill at a bridgehead: the street ramps down from the deck at 12 % at most
+        var ramp = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            ramp[i] = -1e4f;
+            for (int j = 0; j < n; j++) if (onDeck[j]) ramp[i] = Mathf.Max(ramp[i], deckY[j] - lift - Mathf.Abs(cum[i] - cum[j]) * 0.12f);
+        }
+        for (int i = 0; i < n; i++)
+            if (onDeck[i]) pts[i].y = deckY[i] - lift;
+            else if (!wet[i]) pts[i].y = Mathf.Max(pts[i].y, ramp[i]);
         float hw = width / 2;
         for (int i = 0; i < n - 1; i++)
         {
@@ -163,18 +194,30 @@ public static class MapBuilder
             var side = Vector3.Cross(Vector3.up, new Vector3(b.x - a.x, 0, b.z - a.z)).normalized * hw;
             if (side == Vector3.zero) continue;
             float len = Vector3.Distance(a, b);
-            if (!wet[i] && !wet[i + 1])
+            if (onDeck[i] && onDeck[i + 1]) continue;
+            if ((!wet[i] || onDeck[i]) && (!wet[i + 1] || onDeck[i + 1]))
             {
                 // on land: drape on the terrain in 4 m steps, each corner on its own ground. A straight strip between OSM points
-                // (often 30+ m apart) or across a side slope let the terrain poke through the road.
+                // (often 30+ m apart) or across a side slope let the terrain poke through the road. Near a bridge: the ramp.
                 int k = Mathf.Max(1, Mathf.CeilToInt(len / 4f));
-                Vector3 G(Vector3 q) => new(q.x, Height(q.x, q.z) + lift, q.z);
+                float r0 = onDeck[i] ? deckY[i] - lift : ramp[i], r1 = onDeck[i + 1] ? deckY[i + 1] - lift : ramp[i + 1];
+                Vector3 G(Vector3 q, float f) => new(q.x, Mathf.Max(Height(q.x, q.z), Mathf.Lerp(r0, r1, f)) + lift, q.z);
                 for (int s = 0; s < k; s++)
                 {
-                    var c0 = Vector3.Lerp(a, b, (float)s / k); var c1 = Vector3.Lerp(a, b, (float)(s + 1) / k);
+                    float f0 = (float)s / k, f1 = (float)(s + 1) / k;
+                    var c0 = Vector3.Lerp(a, b, f0); var c1 = Vector3.Lerp(a, b, f1);
                     float v0 = len * s / k / 6, v1 = len * (s + 1) / k / 6;
-                    mb.Poly(m, new[] { G(c0 - side), G(c1 - side), G(c1 + side), G(c0 + side) },
+                    Vector3 p00 = G(c0 - side, f0), p10 = G(c1 - side, f1), p11 = G(c1 + side, f1), p01 = G(c0 + side, f0);
+                    mb.Poly(m, new[] { p00, p10, p11, p01 },
                         new[] { new Vector2(0, v0), new Vector2(0, v1), new Vector2(width / 6, v1), new Vector2(width / 6, v0) }, Vector3.up);
+                    if (parapet == null) continue;
+                    foreach (var (q0, q1, o) in new[] { (p00, p10, -side), (p01, p11, side) }) // retaining wall under a raised ramp
+                    {
+                        float g0 = Height(q0.x, q0.z), g1 = Height(q1.x, q1.z);
+                        if (q0.y - g0 < 0.4f && q1.y - g1 < 0.4f) continue;
+                        mb.Poly(parapet, new[] { new Vector3(q0.x, g0 - 0.5f, q0.z), new Vector3(q1.x, g1 - 0.5f, q1.z), q1, q0 },
+                            new[] { new Vector2(0, 0), new Vector2(len / k / 3, 0), new Vector2(len / k / 3, (q1.y - g1) / 3), new Vector2(0, (q0.y - g0) / 3) }, o);
+                    }
                 }
                 continue;
             }
@@ -252,6 +295,58 @@ public static class MapBuilder
     }
 
     // Real 3D buildings with their true roofs (Tools/fetch_ipr3d.py). False when the file is missing: OSM boxes are the fallback.
+    // IPR heights are above sea level (Bpv), ours are above the river: the median building gives the shift
+    static float IprDatum()
+    {
+        var asset = Resources.Load<TextAsset>("IprBuildings");
+        if (asset == null) return float.NaN;
+        var r = new System.IO.BinaryReader(new System.IO.MemoryStream(asset.bytes));
+        if (new string(r.ReadChars(4)) != "IPR1") return float.NaN;
+        int nl = r.ReadInt32(); for (int i = 0; i < nl; i++) r.ReadBytes(r.ReadByte());
+        int count = r.ReadInt32(); var d = new List<float>(count);
+        for (int k = 0; k < count; k++)
+        {
+            r.ReadInt32(); r.ReadBytes(3); float ox = r.ReadSingle(), oz = r.ReadSingle(), b = r.ReadSingle(); int nt = r.ReadInt32();
+            r.BaseStream.Seek(nt * 18L, System.IO.SeekOrigin.Current);
+            float h = Height(ox, oz); if (h > 0.5f) d.Add(h - b);
+        }
+        if (d.Count == 0) return float.NaN;
+        d.Sort(); return d[d.Count / 2];
+    }
+
+    // Real bridges (IPR Mosty3D 2020, data base © IPR Praha, CC BY 4.0): arches, piers, towers, at their real height; walkable
+    static void BuildIprBridges(Transform root)
+    {
+        var asset = Resources.Load<TextAsset>("IprBridges");
+        float datum = IprDatum();
+        if (asset == null || float.IsNaN(datum)) return;
+        var r = new System.IO.BinaryReader(new System.IO.MemoryStream(asset.bytes));
+        if (new string(r.ReadChars(4)) != "IPR1") return;
+        int nl = r.ReadInt32(); for (int i = 0; i < nl; i++) r.ReadBytes(r.ReadByte());
+        var stone = new Material(Gfx.Mat(Palette.GothicStone, 0.08f)) { name = "IprMosty_2s" }; stone.SetFloat("_Cull", 0f);
+        var deck = new Material(Gfx.Mat(Palette.CobbleDark, 0.1f, Gfx.CobbleTex)) { name = "IprMostyDeck_2s" }; deck.SetFloat("_Cull", 0f);
+        const float Q = 0.05f; var pts = new Vector3[3]; var uvs = new Vector2[3];
+        int count = r.ReadInt32();
+        for (int k = 0; k < count; k++)
+        {
+            r.ReadInt32(); r.ReadBytes(3); float ox = r.ReadSingle(), oz = r.ReadSingle(), b = r.ReadSingle(); int nt = r.ReadInt32();
+            var mb = new MeshBuilder();
+            for (int t = 0; t < nt; t++)
+            {
+                for (int i = 0; i < 3; i++) pts[i] = new Vector3(ox + r.ReadInt16() * Q, b + datum + r.ReadInt16() * Q, oz + r.ReadInt16() * Q);
+                var n = Vector3.Cross(pts[1] - pts[0], pts[2] - pts[0]);
+                if (n.sqrMagnitude < 1e-6f) continue;
+                n.Normalize(); if (Mathf.Abs(n.y) > 0.35f && n.y < 0) n = -n;
+                bool top = n.y > 0.9f;
+                for (int i = 0; i < 3; i++) uvs[i] = top ? new Vector2(pts[i].x, pts[i].z) / 6f : new Vector2(pts[i].x + pts[i].z, pts[i].y) / 4f;
+                mb.Poly(top ? deck : stone, pts, uvs, n);
+            }
+            mb.Build($"IprMosty_{k}", root, true);
+        }
+        Physics.SyncTransforms();
+        Debug.Log($"[Mapa] IPR mosty: {count}, datum {datum:0.0} m");
+    }
+
     static bool BuildIpr(Transform root)
     {
         Ipr.Clear();

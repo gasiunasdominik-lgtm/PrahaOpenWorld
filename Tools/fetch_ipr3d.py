@@ -92,9 +92,9 @@ def attributes():
         if not d.get("exceededTransferLimit"): return res
 
 
-def main():
+def main(out=OUT, with_attrs=True):
     ls = leaves(); print("uzlů:", len(ls))
-    attrs = attributes(); print("atributů:", len(attrs))
+    attrs = attributes() if with_attrs else {}; print("atributů:", len(attrs))
     x0, z0 = proj(BBOX[0], BBOX[1]); x1, z1 = proj(BBOX[2], BBOX[3])
     labels, blds, seen = [], [], set()
     with ThreadPoolExecutor(8) as ex:
@@ -105,11 +105,11 @@ def main():
                 mx = sum(p[0] for p in pts) / len(pts); mz = sum(p[2] for p in pts) / len(pts)
                 if not (x0 <= mx <= x1 and z0 <= mz <= z1): continue
                 seen.add(oid)
-                lab, floors, acc = attrs.get(oid, ("", 0, 0))
+                lab, floors, acc = attrs.get(oid, ("" if with_attrs else "most", 0, 0))
                 if lab not in labels: labels.append(lab)
                 blds.append((oid, labels.index(lab), floors, acc, mx, mz, min(p[1] for p in pts), tris))
             if i % 20 == 0: print(f"  {i}/{len(ls)} uzlů, {len(blds)} budov")
-    with open(OUT, "wb") as f:
+    with open(out, "wb") as f:
         f.write(b"IPR1"); f.write(struct.pack("<i", len(labels)))
         for s in labels:
             e = s.encode("utf-8"); f.write(struct.pack("<B", len(e))); f.write(e)
@@ -122,7 +122,7 @@ def main():
                     q += [max(-32767, min(32767, round((x - ox) / Q))), max(-32767, min(32767, round((y - base) / Q))),
                           max(-32767, min(32767, round((z - oz) / Q)))]
             f.write(struct.pack(f"<{len(q)}h", *q))
-    print("budov:", len(blds), "trojúhelníků:", sum(len(b[7]) for b in blds), "MB:", round(os.path.getsize(OUT) / 1e6, 1),
+    print("budov:", len(blds), "trojúhelníků:", sum(len(b[7]) for b in blds), "MB:", round(os.path.getsize(out) / 1e6, 1),
           "bez atributů:", sum(1 for b in blds if b[0] not in attrs))
     print("funkce:", labels)
 
@@ -153,4 +153,8 @@ def trees():
 
 
 if __name__ == "__main__":
-    trees() if sys.argv[1:] == ["trees"] else main()
+    if sys.argv[1:] == ["trees"]: trees()
+    elif sys.argv[1:] == ["bridges"]:  # Mosty3D_2020: same I3S layout, no attributes; python3 Tools/fetch_ipr3d.py bridges
+        SCENE = HOST.replace("Budovy3D", "Mosty3D") + "/SceneServer/layers/0"
+        main(os.path.join(os.path.dirname(OUT), "IprBridges.bytes"), with_attrs=False)
+    else: main()
