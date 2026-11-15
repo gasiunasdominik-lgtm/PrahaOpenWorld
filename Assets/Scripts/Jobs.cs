@@ -55,7 +55,7 @@ public class Jobs : MonoBehaviour
                     var o = offers[k]; offers.RemoveAt(k);
                     News(o.kind == "taxi" ? $"{o.giver} si vzal jiné taxi." : $"{o.giver}: zásilku odvezl jiný kurýr.");
                 }
-            for (int k = 0; k < 3 && offers.Count < 4; k++) { var j = rng.Next(2) == 0 ? Taxi(me) : Courier(me); if (j != null) { j.posted = Time.time; offers.Add(j); } }
+            for (int k = 0; k < 3 && offers.Count < 4; k++) { int r = rng.Next(3); var j = r == 0 ? Taxi(me) : Courier(me, r == 2 ? Local.For(CityBuilder.District(me)) : null); if (j != null) { j.posted = Time.time; offers.Add(j); } }
         }
         if (kb != null)
         {
@@ -118,22 +118,26 @@ public class Jobs : MonoBehaviour
     }
 
     // Courier: an open place sends what it makes to another open place.
-    Job Courier(Vector3 me)
+    // With a local template the run is the district's own trade: from a place of its kind in this district.
+    Job Courier(Vector3 me, Local loc = null)
     {
         float h = GameClock.I.hour; var ps = MapBuilder.D.places;
-        for (int tries = 0; tries < 30; tries++)
+        for (int tries = 0; tries < (loc == null ? 30 : 1500); tries++)
         {
             var a = ps[rng.Next(ps.Length)];
             var ap = new Vector3(a.p[0], 0, a.p[1]); ap.y = MapBuilder.Height(ap.x, ap.z);
             float d = Vector3.Distance(new Vector3(me.x, ap.y, me.z), ap);
             if (d < 60f || d > 400f || !Places.IsOpen(a.k, h) || string.IsNullOrEmpty(a.n)) continue;
+            if (loc != null && (System.Array.IndexOf(loc.from, a.k) < 0 || !loc.Has(CityBuilder.District(ap)))) continue;
             var b = ps[rng.Next(ps.Length)];
+            if (loc != null && System.Array.IndexOf(loc.to, b.k) < 0) continue;
             var bp = new Vector3(b.p[0], 0, b.p[1]); bp.y = MapBuilder.Height(bp.x, bp.z);
             float trip = Vector3.Distance(ap, bp);
             if (b == a || trip < 300f || trip > 1600f || !Places.IsOpen(b.k, h) || string.IsNullOrEmpty(b.n)) continue;
             float mult = Rush(h) ? 1.5f : 1f;
-            var j = new Job { kind = "kurýr", giver = a.n, from = ap, to = bp, fromName = a.n, toName = b.n,
-                reason = $"Pošleme {Places.Item(a.k)} do {b.n}, potřebují to hned." };
+            var j = new Job { kind = loc == null ? "kurýr" : "místní", giver = a.n, from = ap, to = bp, fromName = a.n, toName = b.n,
+                reason = loc == null ? $"Pošleme {Places.Item(a.k)} do {b.n}, potřebují to hned." : string.Format(loc.why, b.n) };
+            if (loc != null) mult *= 1.3f; // local trade pays a little better: they need someone who knows the streets
             mult *= Rep.PayMult(j.from);
             j.reward = Mathf.RoundToInt((40f + 30f * j.Km) * mult / 10f) * 10; j.limit = trip / 7f + 40f;
             return j;
@@ -210,4 +214,29 @@ public static class Rep
     public static void Add(Vector3 at, int d) { var k = CityBuilder.District(at); score[k] = Of(k) + d; }
     public static float PayMult(Vector3 at) => 1f + Mathf.Clamp(Of(CityBuilder.District(at)), -10, 10) * 0.03f;
     public static float WitnessRange(Vector3 at) => 35f + Mathf.Clamp(-Of(CityBuilder.District(at)), 0, 10) * 2.5f;
+}
+
+// What each part of town trades. Matched by district name; reasons are written from the real character of the place.
+public class Local
+{
+    public string[] names, from, to; public string why;
+    public bool Has(string district) { foreach (var n in names) if (district.IndexOf(n, System.StringComparison.OrdinalIgnoreCase) >= 0) return true; return false; }
+    static readonly Local[] all =
+    {
+        new() { names = new[] { "Hrad", "Hradčany", "Strahov", "Jelení", "Královská" }, from = new[] { "restaurant", "pub", "bar" }, to = new[] { "restaurant", "pub", "cafe" },
+                why = "Klášterní pivovar na Strahově vaří víc, než vypijí. Sud piva do {0}, ať to stihneš." },
+        new() { names = new[] { "Malá Strana", "Klárov", "Petřín", "Vojtěšská" }, from = new[] { "office", "cafe" }, to = new[] { "office", "restaurant" },
+                why = "Z velvyslanectví pod Hradem jdou dokumenty, osobně do {0}. Nikomu je nedávej." },
+        new() { names = new[] { "Staré Město", "Josefov", "Haštalská", "Anenská" }, from = new[] { "shop", "cafe" }, to = new[] { "shop", "restaurant" },
+                why = "Turisti vykoupili stánek. Nové zboží do {0}, než přijde další zájezd." },
+        new() { names = new[] { "Nové Město", "Karlov", "Podskalí", "Petrská", "nádraží" }, from = new[] { "office", "shop" }, to = new[] { "office", "cafe" },
+                why = "Smlouva se podepisuje dnes. Vezmi ji do {0}, čekají jen na tebe." },
+        new() { names = new[] { "Vinohrady", "Riegrovy" }, from = new[] { "bar", "restaurant", "shop" }, to = new[] { "bar", "restaurant", "cafe" },
+                why = "Vinohrady jsou po vinicích: bedna vína do {0}, večer mají degustaci." },
+        new() { names = new[] { "Žižkov", "Vítkov" }, from = new[] { "pub", "bar" }, to = new[] { "pub", "bar", "restaurant" },
+                why = "Došel sud a štamgasti čekají. Vezmi plný do {0}." },
+        new() { names = new[] { "Karlín", "Smíchov", "Rohanský" }, from = new[] { "office", "cafe" }, to = new[] { "office", "cafe" },
+                why = "Kancelář v nové budově potřebuje notebook pro nováčka. Do {0}, prosím." },
+    };
+    public static Local For(string district) { foreach (var l in all) if (l.Has(district)) return l; return null; }
 }
