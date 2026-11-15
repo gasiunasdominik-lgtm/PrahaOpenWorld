@@ -1,4 +1,4 @@
-STOVĚŽATÁ – alfa 0.7.0
+STOVĚŽATÁ – alfa 0.7.1
 ======================
 
 Díky, že testuješ! Je to otevřený svět skutečné Prahy (Staré Město, Malá Strana,
