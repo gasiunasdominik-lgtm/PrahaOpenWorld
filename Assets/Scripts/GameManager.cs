@@ -72,6 +72,7 @@ public class GameManager : MonoBehaviour
         new GameObject("Majetek").AddComponent<Property>();
         gameObject.AddComponent<Inspect>();
         new GameObject("Holubi").AddComponent<Pigeons>();
+        new GameObject("Lode").AddComponent<Boats>(); // excursion boats, pedal boats, moored boats on the Vltava
 
         rig = new GameObject("CameraRig").AddComponent<CameraRig>();
         rig.Setup();
