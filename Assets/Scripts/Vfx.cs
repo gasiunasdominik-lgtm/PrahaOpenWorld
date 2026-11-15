@@ -10,8 +10,7 @@ public class Vfx : MonoBehaviour
     void Awake()
     {
         I = this;
-        var sh = Shader.Find("Sprites/Default");
-        mat = new Material(sh) { name = "M_Particles" };
+        mat = new Material(Resources.Load<Material>("SpriteMat")) { name = "M_Particles" }; // Shader.Find can miss a stripped shader in a build
         confetti = Make("Confetti", 1.4f, 0.35f, 9f, 1.2f, new[] { Palette.Accent, Palette.Gold, Palette.Copper });
         var shp = confetti.shape; shp.shapeType = ParticleSystemShapeType.Cone; shp.angle = 35; shp.radius = 0.5f;
         dust = Make("Dust", 0.9f, 0.9f, 1.2f, -0.05f, new[] { Color.Lerp(Palette.Cobble, Palette.Fog, 0.5f), Palette.Cobble });

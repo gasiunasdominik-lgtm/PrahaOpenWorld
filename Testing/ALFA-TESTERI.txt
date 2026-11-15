@@ -1,0 +1,44 @@
+STOVĚŽATÁ – alfa 0.7.0
+======================
+
+Díky, že testuješ! Je to otevřený svět skutečné Prahy (Staré Město, Malá Strana,
+Hrad, Nové Město, Vinohrady, Žižkov, Karlín). Budovy, stromy a terén jsou ze
+skutečných dat IPR Praha. Grafika je zatím zjednodušená – jde o hratelnost.
+
+Spuštění: rozbal složku a spusť Stovezata.exe. Windows může varovat
+("neznámý vydavatel") – Další informace → Přesto spustit.
+
+OVLÁDÁNÍ
+--------
+Pěšky:   WASD pohyb · Shift běh · Mezerník skok · myš kamera
+Auto:    E nastoupit/vystoupit · WASD řízení · Mezerník ruční brzda
+         H troubit · R otočit převrácené auto
+Q        "co to je?" – namiř na budovu, podnik, auto nebo chodce
+B        koupit (do 6 s po Q): byt, garáž nebo podnik
+F        u svého bytu: uložit a schovat se · v garáži: přelakovat auto
+Tab      mobil se zakázkami (X zruší zakázku)
+E        tramvaj na zastávce, vstup do metra
+Esc      pauza
+
+CO ZKUSIT (aspoň něco z toho)
+-----------------------------
+1. Najdi všech 6 památek (Karlův most, Hrad, Staroměstské nám., sv. Mikuláš,
+   Žižkovská věž, Petřín).
+2. Udělej 3 zakázky z mobilu (Tab) – kurýr, taxi, místní.
+3. Vydělej a kup si byt, pak podnik. Vyplatí se?
+4. Ukradni auto, nech se honit policií a zkus jí ujet / schovat se doma.
+5. Projeď se tramvají a metrem.
+
+CO NÁM NAPSAT
+-------------
+- Co tě bavilo a co nudilo (klidně jednou větou).
+- Kde ses zasekl, nevěděl co dál, nebo hra spadla.
+- U chyby: kde jsi byl (čtvrť v levém horním rohu), co jsi dělal, a pokud
+  jde, screenshot (Win+Shift+S).
+- Kolik ti hra běžela FPS / jestli se sekala, a jaký máš počítač.
+
+Log pro případ pádu najdeš v:
+%USERPROFILE%\AppData\LocalLow\DefaultCompany\PrahaOpenWorld\Player.log
+(přilož ho, pokud hra spadla)
+
+Data: © IPR Praha (CC BY 4.0), © přispěvatelé OpenStreetMap (ODbL).

@@ -32,13 +32,10 @@ public static class Gfx
     public static void Init()
     {
         if (baseMat != null && WindowTex != null) return;
-        var rp = GraphicsSettings.currentRenderPipeline;
-        if (rp == null || rp.defaultMaterial == null)
-        {
-            Debug.LogError("[Gfx] No active URP pipeline asset / default material — materials would render pink.");
-            baseMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        }
-        else baseMat = rp.defaultMaterial;
+        // a shipped material, not the pipeline's defaultMaterial (editor-only: null in a build) or Shader.Find (stripped);
+        // Resources also holds BaseLitEmissive / TmpUnderlay so the build keeps the _EMISSION and UNDERLAY_ON variants
+        baseMat = Resources.Load<Material>("BaseLit");
+        if (baseMat == null) Debug.LogError("[Gfx] Resources/BaseLit.mat missing — materials would render pink.");
 
         WindowTex = MakeWindowTex();
         WindowGlowTex = MakeWindowGlow();
