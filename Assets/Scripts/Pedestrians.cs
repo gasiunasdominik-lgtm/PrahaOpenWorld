@@ -37,7 +37,43 @@ public class Pedestrians : MonoBehaviour
         h < 5f ? 0.08f : h < 7f ? Mathf.Lerp(0.08f, 0.9f, (h - 5f) / 2f) : h < 9.5f ? 0.9f : h < 16f ? 0.6f :
         h < 19f ? 0.85f : h < 22f ? 0.6f : Mathf.Lerp(0.6f, 0.15f, (h - 22f) / 2f);
 
-    public int Target => Mathf.RoundToInt(maxPeds * Activity(GameClock.I.hour) * local);
+    // residents follow the hour and the open places around; visitors add on top near a hotspot (capped for integrated GPUs)
+    public int Target => Mathf.Min(170, Mathf.RoundToInt(maxPeds * (Activity(GameClock.I.hour) * local + hotWeight)));
+
+    // Where visitors crowd regardless of shops (Prague's most visited public spaces): a segment a-b with a radius, and how much
+    // busier than an ordinary street it gets at the height of the tourist day. Charles Bridge axis from the IPR bridge model.
+    public struct Hotspot { public string name; public Vector2 a, b; public float r, boost; }
+    public static readonly Hotspot[] Hotspots =
+    {
+        new() { name = "Karlův most", a = new(150, -25), b = new(-330, 75), r = 7, boost = 1.6f },
+        new() { name = "Staroměstské náměstí", a = new(694, 114), b = new(694, 114), r = 70, boost = 1.2f },
+        new() { name = "Karlova", a = new(160, -30), b = new(600, 60), r = 25, boost = 0.9f },
+        new() { name = "Václavské náměstí", a = new(1151, -582), b = new(1366, -782), r = 35, boost = 0.9f },
+        new() { name = "Na Příkopě", a = new(1008, -107), b = new(1187, 103), r = 30, boost = 0.7f },
+        new() { name = "Pražský hrad", a = new(-991, 357), b = new(-777, 445), r = 60, boost = 1.0f },
+        new() { name = "Malostranské náměstí", a = new(-563, 169), b = new(-848, 224), r = 45, boost = 0.7f },
+    };
+    // visitors: none at night, full from mid-morning to evening
+    public static float Tourists(float h) => h < 7f ? 0f : h < 10f ? (h - 7f) / 3f : h < 20f ? 1f : h < 23f ? Mathf.Lerp(1f, 0.2f, (h - 20f) / 3f) : 0.2f;
+
+    static float SegDist(Vector2 p, Vector2 a, Vector2 b)
+    {
+        var ab = b - a; float t = ab.sqrMagnitude < 1e-3f ? 0 : Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+        return Vector2.Distance(p, a + ab * t);
+    }
+
+    // the strongest hotspot whose crowd reaches the spawn ring around p (0 = none)
+    static int HotspotNear(Vector3 p, float reach, out float weight)
+    {
+        int best = -1; weight = 0f; var q = new Vector2(p.x, p.z);
+        for (int i = 0; i < Hotspots.Length; i++)
+        {
+            var h = Hotspots[i]; float d = SegDist(q, h.a, h.b) - h.r;
+            float w = h.boost * Mathf.Clamp01(1f - d / reach);
+            if (w > weight) { weight = w; best = i; }
+        }
+        return best;
+    }
 
     void Update()
     {
@@ -51,6 +87,8 @@ public class Pedestrians : MonoBehaviour
         {
             localTimer = 2f;
             local = Mathf.Clamp(Places.OpenNear(focus, hour) / 12f, 0.25f, 1.4f);
+            hot = HotspotNear(focus, spawnMax, out float hw);
+            hotWeight = hw * Tourists(hour);
         }
         for (int i = live.Count - 1; i >= 0; i--)
             if ((live[i].transform.position - focus).sqrMagnitude > despawn * despawn && !live[i].waiting) Despawn(live[i]);
@@ -62,8 +100,12 @@ public class Pedestrians : MonoBehaviour
         }
     }
 
+    int hot = -1; float hotWeight;
+
     void TrySpawn(Vector3 focus, float hour, float minDist)
     {
+        // near a hotspot, most newcomers appear on it and stroll to its other end
+        if (hot >= 0 && rng.NextDouble() < 0.8 * Mathf.Clamp01(hotWeight) && TrySpawnTourist(focus, Hotspots[hot])) return;
         bool fromDoor = rng.Next(2) == 0;
         for (int attempt = 0; attempt < 12; attempt++)
         {
@@ -108,6 +150,43 @@ public class Pedestrians : MonoBehaviour
             }
             return;
         }
+    }
+
+    bool TrySpawnTourist(Vector3 focus, Hotspot h)
+    {
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            float t = (float)rng.NextDouble(); var c = Vector2.Lerp(h.a, h.b, t);
+            float ang = (float)rng.NextDouble() * Mathf.PI * 2f, rad = h.r * Mathf.Sqrt((float)rng.NextDouble());
+            var probe = new Vector3(c.x + Mathf.Cos(ang) * rad, 0, c.y + Mathf.Sin(ang) * rad);
+            if (!NearestVertex(probe, out int s, out int v)) continue;
+            if (MapBuilder.StreetY[s][v] < 0.5f) continue;
+            var at = new Vector3(MapBuilder.D.streets[s].p[2 * v], MapBuilder.StreetY[s][v], MapBuilder.D.streets[s].p[2 * v + 1]) + Vector3.up;
+            if ((at - focus).sqrMagnitude > despawn * despawn * 0.8f) continue;
+            if ((at - focus).sqrMagnitude < 70f * 70f && InView(at)) continue; // never pop into sight up close
+            var end = t < 0.5f ? h.b : h.a; // stroll towards the far end (on a square: across it)
+            if ((h.b - h.a).sqrMagnitude < 1f) end = h.a + Random.insideUnitCircle * h.r;
+            var w = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
+            w.gameObject.SetActive(true);
+            w.Begin(s, v, new Vector3(end.x, 0, end.y), "na procházku", h.name, null, rng);
+            live.Add(w);
+            if (rng.NextDouble() < 0.55 && live.Count + 2 < maxPeds * 2) // visitors come in pairs and small groups
+            {
+                int n = rng.NextDouble() < 0.6 ? 1 : 2;
+                w.GroupSpeed(n + 1);
+                for (int k = 0; k < n; k++)
+                {
+                    var g = pool.Count > 0 ? pool.Pop() : Walker.Create(transform, rng);
+                    g.gameObject.SetActive(true);
+                    g.Begin(s, v, new Vector3(end.x, 0, end.y), "na procházku", h.name, null, rng);
+                    g.leader = w; g.offset = (k + 1) * 0.75f * (k % 2 == 0 ? 1f : -1f);
+                    g.transform.position = w.transform.position + w.transform.right * g.offset;
+                    live.Add(g);
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     bool NearestVertex(Vector3 p, out int street, out int vtx)
