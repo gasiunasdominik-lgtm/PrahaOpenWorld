@@ -16,9 +16,21 @@ public static class Gfx
     public static Texture2D WindowTex, CobbleTex, RoadTex, RoundedTex;
     public static Sprite RoundedSprite, CircleSprite, ArrowSprite;
 
+    // Domain reload is disabled (Enter Play Mode Options), so statics survive between
+    // play sessions while Unity destroys the objects they point to. Stale cached
+    // materials come back as null and render pink, so start every session clean.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics()
+    {
+        cache.Clear();
+        baseMat = null;
+        WindowTex = CobbleTex = RoadTex = RoundedTex = null;
+        RoundedSprite = CircleSprite = ArrowSprite = null;
+    }
+
     public static void Init()
     {
-        if (baseMat != null) return;
+        if (baseMat != null && WindowTex != null) return;
         var rp = GraphicsSettings.currentRenderPipeline;
         if (rp == null || rp.defaultMaterial == null)
         {
@@ -43,7 +55,7 @@ public static class Gfx
     {
         Init();
         string key = ColorUtility.ToHtmlStringRGBA(c) + smooth.ToString("0.00") + (tex ? tex.name : "") + tag;
-        if (cache.TryGetValue(key, out var m)) return m;
+        if (cache.TryGetValue(key, out var m) && m != null) return m;
         m = new Material(baseMat) { name = "M_" + key };
         m.SetColor(BaseColor, c);
         m.SetFloat(Smoothness, smooth);
@@ -57,7 +69,7 @@ public static class Gfx
     {
         Init();
         string key = "E" + ColorUtility.ToHtmlStringRGBA(c) + intensity;
-        if (cache.TryGetValue(key, out var m)) return m;
+        if (cache.TryGetValue(key, out var m) && m != null) return m;
         m = new Material(baseMat) { name = "M_" + key };
         m.SetColor(BaseColor, c);
         m.EnableKeyword("_EMISSION");
