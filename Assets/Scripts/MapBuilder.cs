@@ -108,8 +108,13 @@ public static class MapBuilder
             StreetY.Add(Ribbon(streets, s.p, s.w, 0.12f, s.foot ? cobble : asphalt, stone));
             StreetFloor.Add(lastFloor); StreetFlat.Add(lastFlat);
         }
-        foreach (var tr in D.trams) Ribbon(streets, tr.p, 1.6f, 0.16f, rail, null);
         streets.Build("Ulice", root, true, false);
+        // tram tracks: grooved rails set flush in concrete panels, no collider of their own (a car rolls over them)
+        var tramVis = new MeshBuilder();
+        var railM = Gfx.Mat(Color.white, 0.35f, TramTex(), "tramTrack"); railM.mainTextureScale = new Vector2(6f / 2.6f, 1f);
+        foreach (var tr in D.trams) Ribbon(tramVis, tr.p, 2.6f, 0.127f, railM, null);
+        tramVis.Build("Koleje", root, false, false);
+        Physics.SyncTransforms(); BuildCorners(root, asphalt, stone);
 
         // squares are areas, not lines: give pedestrians a few invisible paths across each one
         int origStreets = D.streets.Length;
@@ -547,6 +552,138 @@ public static class MapBuilder
         int n = r.ReadInt32();
         for (int i = 0; i < n; i++) { int id = r.ReadInt32(); d[id] = (r.ReadByte(), r.ReadByte()); }
         return d;
+    }
+
+    // concrete track panels with two grooved rails (u 0..1 = 2.6 m across, v = 6 m along)
+    static Texture2D TramTex()
+    {
+        const int W = 128, H = 128; var t = new Texture2D(W, H, TextureFormat.RGB24, true) { wrapMode = TextureWrapMode.Repeat, anisoLevel = 8 };
+        var px = new Color[W * H]; var r = new System.Random(9);
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
+            {
+                float u = x / (float)W, n = (float)r.NextDouble();
+                var c = new Color(0.42f, 0.41f, 0.39f) * (0.85f + 0.2f * n); // weathered concrete panels
+                if (y % 43 == 0 || x == 0) c *= 0.55f; // panel joints
+                foreach (float ru in new[] { 0.223f, 0.777f })
+                {
+                    float d = Mathf.Abs(u - ru) * 2.6f;
+                    if (d < 0.035f) c = new Color(0.62f, 0.6f, 0.58f) * (0.95f + 0.1f * n); // the polished running head
+                    else if (d < 0.06f && u > ru) c = new Color(0.08f, 0.08f, 0.08f); // the groove beside it
+                    else if (d < 0.09f) c = new Color(0.3f, 0.28f, 0.27f); // the rail's steel cap
+                }
+                px[y * W + x] = c;
+            }
+        t.SetPixels(px); t.Apply(true); return t;
+    }
+
+    // Street corners as in Prague: where car streets meet, the block corners are rounded (kerb radius 3-6 m) and every
+    // carriageway is edged with a granite kerb, broken where another street joins.
+    static void BuildCorners(Transform root, Material asphalt, Material kerbM)
+    {
+        var mb = new MeshBuilder();
+        var cars = new List<int>(); for (int i = 0; i < D.streets.Length; i++) if (!D.streets[i].foot && D.streets[i].w >= 5f) cars.Add(i);
+        // junction points: vertices shared (within 2.5 m) by two or more car streets
+        var grid = new Dictionary<Vector2Int, List<(int s, int v)>>();
+        Vector2Int C(float x, float z) => new(Mathf.FloorToInt(x / 5f), Mathf.FloorToInt(z / 5f));
+        foreach (int si in cars) { var p = D.streets[si].p; for (int v = 0; v < p.Length / 2; v++) { var c = C(p[2 * v], p[2 * v + 1]); if (!grid.TryGetValue(c, out var l)) grid[c] = l = new(); l.Add((si, v)); } }
+        var junctions = new List<(Vector2 at, float r)>(); var used = new HashSet<(int, int)>();
+        foreach (int si in cars)
+        {
+            var p = D.streets[si].p;
+            for (int v = 0; v < p.Length / 2; v++)
+            {
+                if (used.Contains((si, v))) continue;
+                var at = new Vector2(p[2 * v], p[2 * v + 1]); var arms = new List<(Vector2 d, float hw)>(); var members = new List<(int, int)>();
+                var c0 = C(at.x, at.y);
+                for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
+                    if (grid.TryGetValue(new Vector2Int(c0.x + dx, c0.y + dz), out var l))
+                        foreach (var (t, tv) in l)
+                        {
+                            var q = D.streets[t].p; if ((new Vector2(q[2 * tv], q[2 * tv + 1]) - at).sqrMagnitude > 2.5f * 2.5f) continue;
+                            members.Add((t, tv)); int n = q.Length / 2; float hw = D.streets[t].w / 2f;
+                            if (tv > 0) arms.Add(((new Vector2(q[2 * tv - 2], q[2 * tv - 1]) - at).normalized, hw));
+                            if (tv < n - 1) arms.Add(((new Vector2(q[2 * tv + 2], q[2 * tv + 3]) - at).normalized, hw));
+                        }
+                var streetsHere = new HashSet<int>(); foreach (var (t, _) in members) streetsHere.Add(t);
+                if (streetsHere.Count < 2 || arms.Count < 3) continue; // a plain bend or an end: the street's own discs do it
+                foreach (var m in members) used.Add(m);
+                arms.Sort((x, y) => Mathf.Atan2(x.d.y, x.d.x).CompareTo(Mathf.Atan2(y.d.y, y.d.x)));
+                float jr = 0;
+                for (int k = 0; k < arms.Count; k++)
+                {
+                    var (da, ha) = arms[k]; var (db, hb) = arms[(k + 1) % arms.Count];
+                    float gap = Vector2.SignedAngle(da, db); if (gap < 0) gap += 360f;
+                    jr = Mathf.Max(jr, Mathf.Max(ha, hb));
+                    if (gap < 25f || gap > 165f) continue;
+                    // the two kerb lines facing this gap, and where they cross (the sharp block corner)
+                    var na = new Vector2(-da.y, da.x); var nb = new Vector2(db.y, -db.x); // normals toward the gap
+                    Vector2 pa = at + na * ha, pb = at + nb * hb;
+                    float den = da.x * db.y - da.y * db.x; if (Mathf.Abs(den) < 1e-3f) continue;
+                    var w0 = pb - pa; float ta = (w0.x * db.y - w0.y * db.x) / den;
+                    var corner = pa + da * ta;
+                    float th = gap * Mathf.Deg2Rad, R = Mathf.Clamp(Mathf.Min(ha, hb) * 1.1f, 3f, 6f);
+                    float dT = R / Mathf.Tan(th / 2f); if (dT > 14f) continue;
+                    var Ta = corner + da * dT; var Tb = corner + db * dT;
+                    var O = corner + (da + db).normalized * (R / Mathf.Sin(th / 2f));
+                    var poly = new List<Vector3> { Gnd(corner) };
+                    float a0 = Mathf.Atan2(Ta.y - O.y, Ta.x - O.x), a1 = Mathf.Atan2(Tb.y - O.y, Tb.x - O.x);
+                    float sweep = Mathf.DeltaAngle(a0 * Mathf.Rad2Deg, a1 * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                    var arc = new List<Vector2>();
+                    for (int q = 0; q <= 8; q++) { float ang = a0 + sweep * q / 8f; arc.Add(O + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * R); }
+                    foreach (var ap in arc) poly.Add(Gnd(ap));
+                    for (int q = 1; q < poly.Count - 1; q++) mb.Poly(asphalt, new[] { poly[0], poly[q], poly[q + 1] }, new[] { UV(poly[0]), UV(poly[q]), UV(poly[q + 1]) }, Vector3.up);
+                    for (int q = 0; q + 1 < arc.Count; q++) Kerb(mb, kerbM, arc[q], arc[q + 1], O);
+                }
+                junctions.Add((at, jr + 6.5f));
+            }
+        }
+        // kerbs along the straight edges, broken at the junctions
+        foreach (int si in cars)
+        {
+            var st = D.streets[si]; var p = st.p; float hw = st.w / 2f; var sy = si < StreetY.Count ? StreetY[si] : null;
+            for (int v = 0; v + 1 < p.Length / 2; v++)
+            {
+                var a = new Vector2(p[2 * v], p[2 * v + 1]); var b = new Vector2(p[2 * v + 2], p[2 * v + 3]);
+                if (sy != null && (Mathf.Abs(sy[v] - Height(a.x, a.y)) > 0.6f || Height(a.x, a.y) < -0.5f)) continue; // bridges, ramps
+                var d = b - a; float len = d.magnitude; if (len < 0.5f) continue; d /= len; var nrm = new Vector2(-d.y, d.x);
+                for (float s0 = 0; s0 < len; s0 += 3f)
+                {
+                    float s1 = Mathf.Min(len, s0 + 3f); var m0 = a + d * ((s0 + s1) / 2f);
+                    bool inJ = false; foreach (var (at, r) in junctions) if ((m0 - at).sqrMagnitude < r * r) { inJ = true; break; }
+                    if (inJ) continue;
+                    foreach (float e in new[] { -1f, 1f })
+                    {
+                        var q0 = a + d * s0 + nrm * hw * e; var q1 = a + d * s1 + nrm * hw * e;
+                        Kerb(mb, kerbM, q0, q1, q0 + nrm * e * 10f);
+                    }
+                }
+            }
+        }
+        mb.Build("Obrubniky", root, false, false);
+        Debug.Log($"[Mapa] křižovatek se zaoblenými rohy: {junctions.Count}");
+    }
+
+    // the top of the street surface (draped ribbon, bridge ramps) where there is one, else the ground + the street lift
+    public static float RoadY(float x, float z)
+    {
+        float h = Height(x, z);
+        foreach (var hit in Physics.RaycastAll(new Vector3(x, h + 30f, z), Vector3.down, 40f))
+            if (hit.collider.name == "Ulice") return hit.point.y;
+        return h + 0.124f;
+    }
+    static Vector3 Gnd(Vector2 p) => new(p.x, RoadY(p.x, p.y) + 0.004f, p.y);
+    static Vector2 UV(Vector3 p) => new(p.x / 6f, p.z / 6f);
+    // a granite kerb stone strip 0.22 m wide on the block side of the line a-b (block = toward `away`), a little proud
+    static void Kerb(MeshBuilder mb, Material m, Vector2 a, Vector2 b, Vector2 away)
+    {
+        var d = (b - a); if (d.sqrMagnitude < 1e-4f) return; d.Normalize(); var n = new Vector2(-d.y, d.x);
+        if (Vector2.Dot(away - a, n) < 0) n = -n;
+        Vector3 P(Vector2 q, float up) => new(q.x, RoadY(q.x, q.y) + up, q.y);
+        var a1 = a + n * 0.22f; var b1 = b + n * 0.22f;
+        mb.Poly(m, new[] { P(a, 0.1f), P(b, 0.1f), P(b1, 0.1f), P(a1, 0.1f) }, new[] { new Vector2(0, 0), new Vector2(Vector2.Distance(a, b) / 1.5f, 0), new Vector2(Vector2.Distance(a, b) / 1.5f, 0.15f), new Vector2(0, 0.15f) }, Vector3.up);
+        var nn = new Vector3(-n.x, 0, -n.y);
+        mb.Poly(m, new[] { P(a, -0.12f), P(b, -0.12f), P(b, 0.1f), P(a, 0.1f) }, null, nn); // the face toward the road
     }
 
     // OSM puts a shop's point inside its building, where nobody can stand: a courier had to get within 9 m of it,
