@@ -93,7 +93,8 @@ public class PlayerController : MonoBehaviour
         // the Vltava is cold — fall in and you're back on the bank
         safeTimer += dt;
         if (cc.isGrounded && transform.position.y > -0.5f && safeTimer > 0.5f) { lastSafe = transform.position; safeTimer = 0; }
-        if (transform.position.y < -1.8f)
+        var tp = transform.position;
+        if (tp.y < -1.8f && !Metro.InStation(tp)) // (not down in the metro: some vestibules lie under the river)
         {
             Teleport(lastSafe + Vector3.up * 0.5f, transform.eulerAngles.y);
             OnToast?.Invoke("Vltava je dnes studená!");

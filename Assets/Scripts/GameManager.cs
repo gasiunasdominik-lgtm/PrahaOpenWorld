@@ -68,6 +68,7 @@ public class GameManager : MonoBehaviour
         new GameObject("Parkovani").AddComponent<ParkedCars>();
         new GameObject("Doprava").AddComponent<Traffic>();
         new GameObject("MHD").AddComponent<Transit>();
+        new GameObject("MetroProvoz").AddComponent<Metro>();
         new GameObject("Zakon").AddComponent<Law>();
         new GameObject("Zakazky").AddComponent<Jobs>();
         new GameObject("Majetek").AddComponent<Property>();

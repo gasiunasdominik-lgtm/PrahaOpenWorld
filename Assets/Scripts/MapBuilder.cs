@@ -53,6 +53,7 @@ public static class MapBuilder
         return "Praha";
     }
 
+    public static bool InsidePoly(float[] r, float x, float z) => Inside(r, x, z);
     static bool Inside(float[] r, float x, float z)
     {
         bool c = false; int n = r.Length / 2;
@@ -78,6 +79,7 @@ public static class MapBuilder
     public static void Build(Transform root, List<(Vector3 pos, float yaw)> parking)
     {
         Load();
+        global::Metro.Plan(); MeshBuilder.Cut = true; // stairwells open in the ground, streets and squares built from here on
         var mGround = Gfx.Pbr("Mosaic", 0.1f, 4f, Color.white); // terrain UV: 4 m per unit; mosaic pavement ~1 m per tile
         var mPark = Gfx.Mat(Palette.Grass, 0.05f);
         var mSquare = Gfx.Pbr("Setts", 0.12f, 3f, Color.white); // granite setts of Prague squares
@@ -129,7 +131,8 @@ public static class MapBuilder
         BuildBuildings(root);
         BuildParkingSlots(origStreets);
         PlacesToDoors();
-        BuildMetroEntrances(root);
+        MeshBuilder.Cut = false;
+        if (global::Metro.Halls.Count > 0) global::Metro.Build(root); else BuildMetroEntrances(root);
         BuildSteps(root, Gfx.Pbr("Setts", 0.1f, 1.5f, new Color(0.92f, 0.9f, 0.86f)), Gfx.Pbr("Wall", 0.05f, 2f, new Color(0.78f, 0.75f, 0.7f)));
         BuildTrees(root);
         BuildBounds(root);

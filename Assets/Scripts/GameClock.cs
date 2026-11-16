@@ -33,6 +33,7 @@ public class GameClock : MonoBehaviour
         sun.color = Color.Lerp(Moon, sunColor, day);
         sun.intensity = Mathf.Lerp(0.3f, sunIntensity, day);
         float amb = Mathf.Lerp(0.45f, 1f, day); // night stays playable, not pitch black
+        if (Metro.Under) { amb = 0.55f; sun.intensity = 0f; } // underground: the station's own lights
         RenderSettings.ambientSkyColor = ambSky * amb; RenderSettings.ambientEquatorColor = ambEq * amb; RenderSettings.ambientGroundColor = ambGround * amb;
         RenderSettings.fogColor = fog * Mathf.Lerp(0.3f, 1f, day);
         if (sky) sky.SetFloat("_Exposure", skyExposure * Mathf.Lerp(0.2f, 1f, day));

@@ -118,7 +118,17 @@ public class Transit : MonoBehaviour
                 }
                 return true;
             }
-        foreach (var en in MapBuilder.D.metro.entrances)
+        if (Metro.I != null && Metro.Halls.Count > 0)
+        {
+            if (Metro.I.AtTrain(pp, out var hall))
+            {
+                hud.promptText.text = $"[E] NASTOUPIT · LINKA {hall.lineRef}";
+                if (e) OpenMetro(hall.station, gm, hall.line);
+                return true;
+            }
+            return false;
+        }
+        foreach (var en in MapBuilder.D.metro.entrances) // (no walk-down metro built: the old shortcut)
         {
             float dx = en.p[0] - pp.x, dz = en.p[1] - pp.z;
             if (dx * dx + dz * dz > 16f) continue;
@@ -142,11 +152,11 @@ public class Transit : MonoBehaviour
         return best;
     }
 
-    void OpenMetro(int st, GameManager gm)
+    public void OpenMetro(int st, GameManager gm, int onlyLine = -1)
     {
         lines.Clear();
         var order = MapBuilder.D.metro.order;
-        for (int l = 0; l < order.Length; l++) if (System.Array.IndexOf(order[l].s, st) >= 0) lines.Add(l);
+        for (int l = 0; l < order.Length; l++) if (System.Array.IndexOf(order[l].s, st) >= 0 && (onlyLine < 0 || l == onlyLine)) lines.Add(l);
         if (lines.Count == 0) return;
         station = st; line = 0; dest = FirstDest();
         gm.player.controlEnabled = false;
@@ -167,11 +177,11 @@ public class Transit : MonoBehaviour
         }
         int hops = Mathf.Abs(dest - at), minutes = 3 + hops * 2; // wait for the train + ~2 min per stop
         hud.promptText.text = $"METRO {M.stations[station].n.ToUpperInvariant()} · LINKA {L.@ref} → {M.stations[L.s[dest]].n.ToUpperInvariant()} ({hops} ST., {minutes} MIN)\n" +
-                              $"[A/D] CÍL   {(lines.Count > 1 ? "[W] PŘESTUP NA JINOU LINKU   " : "")}[E] JET   [Q] ZPĚT NAHORU";
-        if ((kb != null && kb.eKey.wasPressedThisFrame) || debugE) StartCoroutine(Ride(L.s[dest], minutes, L.@ref, gm));
+                              $"[A/D] CÍL   {(lines.Count > 1 ? "[W] PŘESTUP NA JINOU LINKU   " : "")}[E] JET   [Q] ZPĚT";
+        if ((kb != null && kb.eKey.wasPressedThisFrame) || debugE) StartCoroutine(Ride(L.s[dest], minutes, L.@ref, gm, lines[line]));
     }
 
-    IEnumerator Ride(int to, int minutes, string lineRef, GameManager gm)
+    IEnumerator Ride(int to, int minutes, string lineRef, GameManager gm, int lineIdx = -1)
     {
         travelling = true;
         yield return gm.hud.FadeTo(1f, 0.4f);
@@ -185,7 +195,9 @@ public class Transit : MonoBehaviour
             if (d < bd && d < 400f * 400f) { bd = d; exit = new Vector2(en.p[0], en.p[1]); }
         }
         var at = new Vector3(exit.x + 2.5f, 0, exit.y + 2.5f); at.y = MapBuilder.Height(at.x, at.z) + 0.1f;
-        gm.player.Teleport(at, gm.player.transform.eulerAngles.y);
+        float yaw = gm.player.transform.eulerAngles.y;
+        if (Metro.I != null && Metro.I.Platform(to, lineIdx, out var plat, out var py)) { at = plat; yaw = py; } // off the train on that platform
+        gm.player.Teleport(at, yaw);
         station = -1; gm.player.controlEnabled = true;
         yield return new WaitForSeconds(0.3f);
         gm.hud.Toast($"METRO {lineRef}: {M.stations[to].n.ToUpperInvariant()} (+{minutes} MIN)", Palette.UILight, 2f);

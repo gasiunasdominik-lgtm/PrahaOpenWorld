@@ -26,7 +26,76 @@ public class MeshBuilder
         return p;
     }
 
+    // Holes cut out of the surface (metro stairwells): while Cut is on, every near-horizontal polygon that overlaps a hole's
+    // rectangle is split into the pieces outside it (Sutherland–Hodgman against the rectangle's four half-planes), so the
+    // terrain, streets and squares - and their colliders - open over the stairs.
+    public struct Hole { public Vector2 c, u; public float hu, hv, y0, y1; }
+    public static readonly List<Hole> Holes = new();
+    public static bool Cut;
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)] static void ResetHoles() { Holes.Clear(); Cut = false; }
+
     public void Poly(Material m, Vector3[] pts, Vector2[] uvs, Vector3 outward)
+    {
+        if (Cut && Holes.Count > 0 && CutHoles(m, pts, uvs, outward)) return;
+        PolyRaw(m, pts, uvs, outward);
+    }
+
+    bool CutHoles(Material m, Vector3[] pts, Vector2[] uvs, Vector3 outward)
+    {
+        if (pts.Length < 3) return false;
+        var nn = Vector3.Cross(pts[1] - pts[0], pts[2] - pts[0]);
+        if (nn.sqrMagnitude < 1e-12f || Mathf.Abs(nn.normalized.y) < 0.3f) return false; // walls stay whole
+        float x0 = float.MaxValue, x1 = float.MinValue, z0 = float.MaxValue, z1 = float.MinValue, y0 = float.MaxValue, y1 = float.MinValue;
+        foreach (var p in pts) { x0 = Mathf.Min(x0, p.x); x1 = Mathf.Max(x1, p.x); z0 = Mathf.Min(z0, p.z); z1 = Mathf.Max(z1, p.z); y0 = Mathf.Min(y0, p.y); y1 = Mathf.Max(y1, p.y); }
+        foreach (var h in Holes)
+        {
+            float r = h.hu + h.hv;
+            if (x1 < h.c.x - r || x0 > h.c.x + r || z1 < h.c.y - r || z0 > h.c.y + r || y1 < h.y0 || y0 > h.y1) continue;
+            var v = new Vector2(-h.u.y, h.u.x);
+            var P = new List<Vector3>(pts); var T = new List<Vector2>(uvs ?? new Vector2[pts.Length]);
+            // does it really overlap? (the inside part has area)
+            var iP = P; var iT = T;
+            Clip(ref iP, ref iT, h.c, h.u, h.hu, false); Clip(ref iP, ref iT, h.c, -h.u, h.hu, false);
+            Clip(ref iP, ref iT, h.c, v, h.hv, false); Clip(ref iP, ref iT, h.c, -v, h.hv, false);
+            if (iP.Count < 3 || Area(iP) < 1e-3f) continue;
+            foreach (var (d, e) in new[] { (h.u, h.hu), (-h.u, h.hu), (v, h.hv), (-v, h.hv) })
+            {
+                var oP = P; var oT = T;
+                Clip(ref oP, ref oT, h.c, d, e, true); // the piece beyond this edge
+                Clip(ref P, ref T, h.c, d, e, false);  // the rest goes on to the next edge
+                if (oP.Count >= 3 && Area(oP) > 1e-4f) Poly(m, oP.ToArray(), uvs != null ? oT.ToArray() : null, outward); // other holes
+                if (P.Count < 3) break;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    static float Area(List<Vector3> P)
+    {
+        float a = 0; for (int i = 0; i < P.Count; i++) { var p = P[i]; var q = P[(i + 1) % P.Count]; a += p.x * q.z - q.x * p.z; }
+        return Mathf.Abs(a) * 0.5f;
+    }
+
+    // keep the part where dot(xz - c, d) - e is >= 0 (beyond) or <= 0 (inside)
+    static void Clip(ref List<Vector3> P, ref List<Vector2> T, Vector2 c, Vector2 d, float e, bool beyond)
+    {
+        var oP = new List<Vector3>(P.Count + 2); var oT = new List<Vector2>(P.Count + 2);
+        float S(Vector3 p) { float s = (p.x - c.x) * d.x + (p.z - c.y) * d.y - e; return beyond ? s : -s; }
+        for (int i = 0; i < P.Count; i++)
+        {
+            int j = (i + 1) % P.Count; float si = S(P[i]), sj = S(P[j]);
+            if (si >= 0) { oP.Add(P[i]); oT.Add(T[i]); }
+            if ((si >= 0) != (sj >= 0))
+            {
+                float t = si / (si - sj);
+                oP.Add(Vector3.Lerp(P[i], P[j], t)); oT.Add(Vector2.Lerp(T[i], T[j], t));
+            }
+        }
+        P = oP; T = oT;
+    }
+
+    void PolyRaw(Material m, Vector3[] pts, Vector2[] uvs, Vector3 outward)
     {
         Vector3 nrm = Vector3.zero;
         for (int i = 1; i < pts.Length - 1 && nrm.sqrMagnitude < 1e-10f; i++)
