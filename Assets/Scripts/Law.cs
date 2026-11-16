@@ -30,11 +30,14 @@ public class Law : MonoBehaviour
     {
         for (int k = 0; k < 2; k++)
         {
-            var car = CarController.Build(new Vector3(0, -60, 0), 0, new Color(0.92f, 0.93f, 0.95f), 0);
-            var mb = new MeshBuilder();
-            mb.Box(Gfx.Mat(new Color(0.1f, 0.25f, 0.7f), 0.5f), new Vector3(0, 0.75f, 0), new Vector3(1.82f, 0.18f, 4.12f)); // blue stripe
-            mb.Box(Gfx.Emissive(new Color(0.2f, 0.4f, 1f), 3f), new Vector3(0, 1.66f, -0.3f), new Vector3(1.1f, 0.14f, 0.3f)); // light bar
-            mb.Build("Policie", car.transform, false, false).isStatic = false;
+            var car = CarController.Build(new Vector3(0, -60, 0), 0, new Color(0.78f, 0.8f, 0.82f), 5, true);
+            if (!Vehicles.Available)
+            {
+                var mb = new MeshBuilder();
+                mb.Box(Gfx.Mat(new Color(0.1f, 0.25f, 0.7f), 0.5f), new Vector3(0, 0.75f, 0), new Vector3(1.82f, 0.18f, 4.12f)); // blue stripe
+                mb.Box(Gfx.Emissive(new Color(0.2f, 0.4f, 1f), 3f), new Vector3(0, 1.66f, -0.3f), new Vector3(1.1f, 0.14f, 0.3f)); // light bar
+                mb.Build("Policie", car.transform, false, false).isStatic = false;
+            }
             var d = car.gameObject.AddComponent<Driver>(); d.car = car; d.police = true;
             owners[car] = "Policie ČR";
             car.gameObject.SetActive(false);

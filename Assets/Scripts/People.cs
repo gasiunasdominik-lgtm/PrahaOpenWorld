@@ -181,6 +181,8 @@ public class HumanMotion : MonoBehaviour
 {
     public float maxSpeed = 3f, stepFreq = 1.9f, stoop;
     public bool pushing; // hands on a pram's handle
+    public bool seated; // behind a wheel: thighs level, knees bent, hands forward
+    public float HipHeight() => hips != null ? transform.InverseTransformPoint(hips.t.position).y : 0.95f;
     public string kind = "adult";
     public bool Grounded = true;
     class B { public Transform t; public Quaternion bind, P, Pinv; public Vector3 dir, pos; }
@@ -246,6 +248,18 @@ public class HumanMotion : MonoBehaviour
         lean = Mathf.Lerp(lean, Mathf.Clamp(Vector3.Dot(accel, transform.forward) * 0.6f, -5f, 5f) + amp * 3f, dt * 5f);
 
         Vector3 R = Vector3.right, U = Vector3.up, F = Vector3.forward;
+        if (seated)
+        {
+            Set(upL, Quaternion.AngleAxis(-82f, R) * Quaternion.AngleAxis(-4f, F)); Set(upR, Quaternion.AngleAxis(-82f, R) * Quaternion.AngleAxis(4f, F));
+            Set(legL, Quaternion.AngleAxis(70f, R)); Set(legR, Quaternion.AngleAxis(76f, R));
+            Set(footL, Quaternion.AngleAxis(-8f, R)); Set(footR, Quaternion.AngleAxis(-12f, R));
+            Set(armL, Quaternion.AngleAxis(-48f, R) * armRestL); Set(armR, Quaternion.AngleAxis(-48f, R) * armRestR);
+            Bend(foreL, armL, handL, 38f); Bend(foreR, armR, handR, 38f);
+            Set(hips, Quaternion.identity); if (hips != null) hips.t.localPosition = hips.pos;
+            Set(spine, Quaternion.AngleAxis(-8f, R)); Set(spine2, Quaternion.AngleAxis(Mathf.Sin(Time.time * 1.6f), R));
+            Set(head, Quaternion.AngleAxis(6f, R) * Quaternion.AngleAxis(Mathf.Sin(Time.time * 0.3f + phase) * 12f, U));
+            return;
+        }
         float hip = 24f * amp, knee = 52f * amp;
         // thighs swing opposite; the knee folds while its leg travels forward (swing phase)
         Set(upL, Quaternion.AngleAxis(-s * hip - 3f * amp, R));

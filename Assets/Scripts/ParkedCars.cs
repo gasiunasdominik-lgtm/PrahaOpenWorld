@@ -34,7 +34,7 @@ public class ParkedCars : MonoBehaviour
         {
             double r = rng.NextDouble(); int pi = 0;
             for (float acc = 0; pi < Mix.Length - 1; pi++) { acc += Mix[pi].w; if (r < acc) break; }
-            var s = new Slot { pos = pos, yaw = yaw, paint = pi, style = rng.NextDouble() < 0.1 ? 2 : rng.Next(2) };
+            var s = new Slot { pos = pos, yaw = yaw, paint = pi, style = new[] { 0, 1, 0, 3, 1, 2, 0, 1, 3, 1 }[rng.Next(10)] };
             var key = Key(pos);
             if (!tiles.TryGetValue(key, out var l)) tiles[key] = l = new List<Slot>();
             l.Add(s);
@@ -50,15 +50,35 @@ public class ParkedCars : MonoBehaviour
         if (built.TryGetValue(k, out var old)) Destroy(old);
         var mb = new MeshBuilder();
         var root = new GameObject($"Parkovani_{k.x}_{k.y}") { isStatic = true }; root.transform.SetParent(transform, false);
+        var groups = new Dictionary<Material, List<CombineInstance>>();
         foreach (var s in tiles[k])
         {
             if (s.gone) continue;
-            Body(mb, s);
+            if (Vehicles.Low(CarController.ModelOf(s.style), out var mesh, out var mats, out var local))
+            {
+                var m = Matrix4x4.TRS(s.pos, Quaternion.Euler(0, s.yaw, 0), Vector3.one) * local;
+                for (int i = 0; i < mats.Length && i < mesh.subMeshCount; i++)
+                {
+                    var mat = Vehicles.For(mats[i], paints[s.paint]);
+                    if (!groups.TryGetValue(mat, out var l)) groups[mat] = l = new List<CombineInstance>();
+                    l.Add(new CombineInstance { mesh = mesh, subMeshIndex = i, transform = m });
+                }
+            }
+            else Body(mb, s);
             var c = new GameObject("P").AddComponent<BoxCollider>(); c.transform.SetParent(root.transform, false);
             c.transform.SetPositionAndRotation(s.pos, Quaternion.Euler(0, s.yaw, 0));
             bool van = s.style == 2; c.center = new Vector3(0, van ? 1.05f : 0.8f, 0); c.size = new Vector3(1.8f, van ? 1.9f : 1.4f, van ? 4.6f : 4.2f);
         }
         mb.Build("Auta", root.transform, false);
+        foreach (var kv in groups)
+        {
+            var me = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            me.CombineMeshes(kv.Value.ToArray(), true, true); me.RecalculateBounds();
+            var go = new GameObject("Auta_" + kv.Key.name) { isStatic = true }; go.transform.SetParent(root.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = me;
+            var r = go.AddComponent<MeshRenderer>(); r.sharedMaterial = kv.Key;
+            r.shadowCastingMode = kv.Key.renderQueue >= 3000 ? UnityEngine.Rendering.ShadowCastingMode.Off : UnityEngine.Rendering.ShadowCastingMode.On;
+        }
         built[k] = root;
     }
 
@@ -118,7 +138,7 @@ public class ParkedCars : MonoBehaviour
             foreach (var s in l) { if (s.gone) continue; float d = (s.pos - at).sqrMagnitude; if (d < bd) { bd = d; best = s; bk = k; } }
         }
         if (best == null) return false;
-        pos = best.pos; yaw = best.yaw; paint = Mix[best.paint].c; style = best.style == 1 ? 0 : best.style;
+        pos = best.pos; yaw = best.yaw; paint = Mix[best.paint].c; style = best.style;
         if (remove) { best.gone = true; Rebuild(bk); }
         return true;
     }

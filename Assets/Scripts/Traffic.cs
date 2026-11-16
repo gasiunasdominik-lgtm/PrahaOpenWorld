@@ -335,7 +335,8 @@ public class Traffic : MonoBehaviour
     int built;
     Driver NewCar(int i)
     {
-        var car = CarController.Build(new Vector3(0, -50, 0), 0, Palette.CarPaints[i % Palette.CarPaints.Length], i % 5 == 0 ? 2 : i % 2);
+        int[] mix = { 0, 1, 0, 3, 1, 2, 0, 1, 4, 3 }; // Prague street mix: small hatchbacks and estates, SUVs, vans, taxis
+        var car = CarController.Build(new Vector3(0, -50, 0), 0, Palette.CarPaints[i % Palette.CarPaints.Length], mix[i % mix.Length], true);
         var d = car.gameObject.AddComponent<Driver>(); d.car = car;
         car.OnCrash = imp => d.Shock();
         car.gameObject.SetActive(false);

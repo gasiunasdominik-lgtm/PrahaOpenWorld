@@ -58,12 +58,21 @@ public class CarController : MonoBehaviour
     public void SetDriven(bool on)
     {
         driven = on;
+        if (on && driverModel) { Destroy(driverModel.transform.parent.gameObject); driverModel = null; } // the player took the seat
         if (!on) { throttle = 0; steer = 0; }
         rb.WakeUp();
     }
 
+    float driverCheck;
     void Update()
     {
+        if (driverModel && (driverCheck -= Time.deltaTime) < 0f)
+        {
+            // the seated driver is a full skinned person: drawn only near the camera, where the glass lets you see them
+            driverCheck = 0.4f + Random.value * 0.2f; var cam = Camera.main;
+            bool near = cam && (cam.transform.position - transform.position).sqrMagnitude < 45f * 45f;
+            var hold = driverModel.transform.parent.gameObject; if (hold.activeSelf != near) hold.SetActive(near);
+        }
         float tIn = 0, sIn = 0;
         if (driven)
         {
@@ -179,8 +188,50 @@ public class CarController : MonoBehaviour
     public bool IsFlipped => Vector3.Dot(transform.up, Vector3.up) < 0.3f;
 
     // ---------------------------------------------------------------- builder
-    public static CarController Build(Vector3 pos, float yaw, Color paint, int style)
+    public HumanMotion driverModel;
+    public static string ModelOf(int style) => style switch { 0 => "Hatch", 1 => "Estate", 2 => "Van", 3 => "Suv", 4 => "Taxi", _ => "Estate" };
+
+    // style: 0 hatchback, 1 estate, 2 van, 3 SUV, 4 taxi, 5 police estate. The Blender models when present, else boxes.
+    public static CarController Build(Vector3 pos, float yaw, Color paint, int style, bool withDriver = false)
     {
+        if (Vehicles.Available)
+        {
+            var root2 = new GameObject("Auto") { tag = "Player", layer = Traffic.CarLayer };
+            root2.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, yaw, 0));
+            var rb2 = root2.AddComponent<Rigidbody>();
+            var car2 = root2.AddComponent<CarController>();
+            var inst = Vehicles.Build(ModelOf(style), root2.transform, Gfx.Mat(paint, style == 4 ? 0.75f : 0.82f));
+            var b = new Bounds(); bool first = true;
+            foreach (var r in root2.GetComponentsInChildren<MeshRenderer>())
+            { var lb = r.bounds; lb.center = root2.transform.InverseTransformPoint(lb.center); if (first) { b = lb; first = false; } else b.Encapsulate(lb); }
+            var col2 = root2.AddComponent<BoxCollider>();
+            col2.center = new Vector3(0, (b.min.y + 0.22f + b.max.y) / 2f, b.center.z); col2.size = new Vector3(b.size.x - 0.2f, b.max.y - b.min.y - 0.22f, b.size.z - 0.05f);
+            for (int i = 0; i < 4; i++)
+            {
+                car2.wheels[i] = inst.wheels[i];
+                if (inst.wheels[i]) { var lp = inst.wheels[i].localPosition; car2.attach[i] = new Vector3(lp.x, 0.6f, lp.z); }
+            }
+            car2.wheelRadius = inst.wheelR; car2.wheelBase = Mathf.Abs(car2.attach[0].z - car2.attach[2].z);
+            if (style == 5)
+            {
+                // Policie ČR: silver estate, the blue and fluorescent-yellow side bands, a blue light bar on the roof
+                var mb2 = new MeshBuilder(); float hx = b.extents.x + 0.005f, top = b.max.y;
+                foreach (float sx in new[] { -1f, 1f })
+                {
+                    mb2.Box(Gfx.Mat(new Color(0.05f, 0.2f, 0.62f), 0.6f), new Vector3(sx * (hx - 0.06f), 0.72f, b.center.z), new Vector3(0.02f, 0.16f, b.size.z * 0.82f));
+                    mb2.Box(Gfx.Emissive(new Color(0.75f, 0.95f, 0.1f), 0.25f), new Vector3(sx * (hx - 0.06f), 0.58f, b.center.z), new Vector3(0.02f, 0.1f, b.size.z * 0.8f));
+                }
+                mb2.Box(Gfx.Mat(new Color(0.15f, 0.15f, 0.16f), 0.5f), new Vector3(0, top + 0.03f, b.center.z + 0.25f), new Vector3(1.1f, 0.06f, 0.3f));
+                mb2.Box(Gfx.Emissive(new Color(0.2f, 0.4f, 1f), 3f), new Vector3(0, top + 0.1f, b.center.z + 0.25f), new Vector3(1.0f, 0.1f, 0.26f));
+                mb2.Build("Policie", root2.transform, false, false).isStatic = false;
+            }
+            if (withDriver) car2.driverModel = Vehicles.Driver(root2.transform, inst.seat, Random.Range(0, 99999));
+            car2.camTarget = new GameObject("CamTarget").transform; car2.camTarget.SetParent(root2.transform, false);
+            car2.camTarget.localPosition = new Vector3(0, 1.3f, 0);
+            car2.seat = new GameObject("ExitPoint").transform; car2.seat.SetParent(root2.transform, false);
+            car2.seat.localPosition = new Vector3(-b.extents.x - 0.9f, 0.1f, inst.seat.z);
+            return car2;
+        }
         // tagged so the camera deoccluder ignores the car's own body
         var root = new GameObject("Auto") { tag = "Player", layer = Traffic.CarLayer };
         root.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, yaw, 0));

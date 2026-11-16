@@ -647,16 +647,22 @@ public static class MapBuilder
                 var a = new Vector2(p[2 * v], p[2 * v + 1]); var b = new Vector2(p[2 * v + 2], p[2 * v + 3]);
                 if (sy != null && (Mathf.Abs(sy[v] - Height(a.x, a.y)) > 0.6f || Height(a.x, a.y) < -0.5f)) continue; // bridges, ramps
                 var d = b - a; float len = d.magnitude; if (len < 0.5f) continue; d /= len; var nrm = new Vector2(-d.y, d.x);
+                float run = -1f; // kerb pieces up to 12 m, joined across the 3 m test steps, broken at junctions
+                void Emit(float r0, float r1)
+                {
+                    foreach (float e in new[] { -1f, 1f })
+                    {
+                        var q0 = a + d * r0 + nrm * hw * e; var q1 = a + d * r1 + nrm * hw * e;
+                        Kerb(mb, kerbM, q0, q1, q0 + nrm * e * 10f);
+                    }
+                }
                 for (float s0 = 0; s0 < len; s0 += 3f)
                 {
                     float s1 = Mathf.Min(len, s0 + 3f); var m0 = a + d * ((s0 + s1) / 2f);
                     bool inJ = false; foreach (var (at, r) in junctions) if ((m0 - at).sqrMagnitude < r * r) { inJ = true; break; }
-                    if (inJ) continue;
-                    foreach (float e in new[] { -1f, 1f })
-                    {
-                        var q0 = a + d * s0 + nrm * hw * e; var q1 = a + d * s1 + nrm * hw * e;
-                        Kerb(mb, kerbM, q0, q1, q0 + nrm * e * 10f);
-                    }
+                    if (inJ) { if (run >= 0) Emit(run, s0); run = -1f; continue; }
+                    if (run < 0) run = s0;
+                    if (s1 - run >= 12f || s1 >= len) { Emit(run, s1); run = -1f; }
                 }
             }
         }
