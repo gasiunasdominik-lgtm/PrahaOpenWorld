@@ -94,7 +94,7 @@ public static class Gfx
     }
 
     // Facade<i> textures from Tools/make_textures.py (real Old Town tones, ground floor shopfronts / rustication)
-    public static int FacadeCount { get { int n = 0; while (n < 16 && T("Facade" + n) != null) n++; return n; } }
+    public static int FacadeCount { get { int n = 0; while (n < 32 && T("Facade" + n) != null) n++; return n; } }
     public static Material FacadeTone(int i)
     {
         var f = Mat(Color.white, 0.08f, T("Facade" + i), i + "facade"); // name ends in "facade": night windows light up

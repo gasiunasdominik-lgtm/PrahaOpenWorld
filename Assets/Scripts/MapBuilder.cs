@@ -428,6 +428,11 @@ public static class MapBuilder
         var tiled = TwoSided(Gfx.Pbr("Roof", 0.15f, 2f, Color.white));
         var slate = TwoSided(Gfx.Pbr("Roof", 0.2f, 2.01f, new Color(0.33f, 0.34f, 0.36f))); // roof UV: 4 m per unit; ~2 m of tiles per texture
         var flat = TwoSided(Gfx.Mat(Color.Lerp(Palette.Slate, Palette.Plinth, 0.5f), 0.1f));
+        // the real colours, per building (Tools/sample_colors.py + color_tones.py: measured on IPR's photo mesh)
+        var tones = LoadTones(out var wallCol, out var roofTint, out var roofFlat);
+        var tiledT = new Material[roofTint.Length]; var flatT = new Material[roofTint.Length];
+        for (int i = 0; i < roofTint.Length; i++) { tiledT[i] = TwoSided(Gfx.Pbr("Roof", 0.15f, 2f, roofTint[i])); flatT[i] = TwoSided(Gfx.Mat(roofFlat[i], 0.1f)); }
+        var churchT = new Dictionary<int, Material>();
         var tiles = new Dictionary<Vector2Int, MeshBuilder>();
         // collision from the same buildings' ground outlines (IprFootprints: Tools/fetch_ipr3d.py footprints): OSM outlines
         // missed or undersized ~1 in 6 of the buildings you see, so you walked through them
@@ -468,8 +473,18 @@ public static class MapBuilder
             if (Covered(ox, oz)) continue; // the photoreal mesh shows it already (still known to the game for Q and buying)
             if (!tiles.TryGetValue(key, out var mb)) tiles[key] = mb = new MeshBuilder();
             bool gothic = use == "církev" && maxY * Q > 40f;
-            var facade = use == "církev" ? (gothic ? churchDark : churchLight) : facades[(id * 7) % facades.Length]; // a church is not a tenement
-            var roofM = gothic ? slate : tiled;
+            tones.TryGetValue(id, out var tone); int ft = tone.f < facades.Length && tone.f < wallCol.Length ? tone.f : -1, rt = tone.r < roofTint.Length ? tone.r : -1;
+            if (!tones.ContainsKey(id)) ft = rt = -1;
+            Material facade;
+            if (use == "církev") // a church is not a tenement: plain stone or plaster, in its measured colour when known
+            {
+                if (ft < 0 || gothic) facade = gothic ? churchDark : churchLight; // Týn, St Vitus: the photo sees a pale gable, the towers are dark
+                else if (!churchT.TryGetValue(ft, out facade))
+                    churchT[ft] = facade = TwoSided(Gfx.Pbr("Wall", 0.08f, 1f / 8f, wallCol[ft]));
+            }
+            else facade = facades[ft >= 0 ? ft : (id * 7) % facades.Length];
+            var roofM = gothic ? slate : rt >= 0 ? tiledT[rt] : tiled;
+            var flatM = rt >= 0 ? flatT[rt] : flat;
             // window rows from the register's floor count: old houses have 4-5 m storeys, not a fixed 3.4 m
             float wallTop = 0;
             for (int t = 0; t < nt; t++)
@@ -493,7 +508,7 @@ public static class MapBuilder
                     if (n.x * (mid.x - ox) + n.z * (mid.z - oz) < 0) n = -n;
                 }
                 Material m;
-                if (n.y > 0.97f) { m = flat; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
+                if (n.y > 0.97f) { m = flatM; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
                 else if (n.y > 0.35f) { m = roofM; for (int i = 0; i < 3; i++) uvs[i] = new Vector2(pts[i].x, pts[i].z) * 0.25f; }
                 else
                 {
@@ -509,6 +524,26 @@ public static class MapBuilder
         IprCollision = coll.Count > 0;
         Debug.Log($"[Mapa] IPR 3D budovy: {Ipr.Count}");
         return true;
+    }
+
+    // IprTones.bytes (Tools/color_tones.py): per building its facade tone (Facade<i>) and roof tint, 255 = not measured
+    static Dictionary<int, (byte f, byte r)> LoadTones(out Color[] wall, out Color[] tint, out Color[] flat)
+    {
+        var d = new Dictionary<int, (byte, byte)>(); wall = tint = flat = new Color[0];
+        var a = Resources.Load<TextAsset>("IprTones"); if (a == null) return d;
+        var r = new System.IO.BinaryReader(new System.IO.MemoryStream(a.bytes));
+        if (new string(r.ReadChars(4)) != "TON1") return d;
+        int nf = r.ReadInt32(), nr = r.ReadInt32(); wall = new Color[nf]; tint = new Color[nr]; flat = new Color[nr];
+        for (int i = 0; i < nf; i++) { var b = r.ReadBytes(3); wall[i] = new Color32(b[0], b[1], b[2], 255); }
+        for (int i = 0; i < nr; i++)
+        {
+            var b = r.ReadBytes(6);
+            tint[i] = new Color(b[0] / 160f, b[1] / 160f, b[2] / 160f);
+            flat[i] = new Color32(b[3], b[4], b[5], 255);
+        }
+        int n = r.ReadInt32();
+        for (int i = 0; i < n; i++) { int id = r.ReadInt32(); d[id] = (r.ReadByte(), r.ReadByte()); }
+        return d;
     }
 
     // OSM puts a shop's point inside its building, where nobody can stand: a courier had to get within 9 m of it,

@@ -157,13 +157,8 @@ def water():
     out.save(os.path.join(OUT, "Water_n.png"))
 
 
-def main():
-    os.makedirs(OUT, exist_ok=True)
-    water()
-    surface("Roof", "RoofingTiles012A", "1K")
-    surface("Mosaic", "PavingStones147", "2K")
-    surface("Setts", "PavingStones048", "2K")
-    surface("Asphalt", "Asphalt025C", "1K")
+def facade_set(colors):
+    """Facade<i>.jpg for every colour (style = i % 2) plus the plain Wall plaster and the two facade normal maps."""
     p = acg("Plaster001", "2K")
     plaster = Image.open(p + "Color.jpg").convert("RGB").resize((N // 2, N // 2), Image.LANCZOS)
     plaster = plaster.point(lambda v: min(255, int(v * 255 / 215)))  # mean ~215 -> white, so the colour comes out true
@@ -180,8 +175,18 @@ def main():
         masks, H = facade_layers(style)
         # (PIL cannot blur float images; the sharp steps read as crisp stucco edges)
         normal_from(H, pn).save(os.path.join(OUT, f"Facade_n{style}.png"))
-        for i, c in enumerate(FACADES):
+        for i, c in enumerate(colors):
             if i % 2 == style: facade(i, c, style, masks, tile)
+
+
+def main():
+    os.makedirs(OUT, exist_ok=True)
+    water()
+    surface("Roof", "RoofingTiles012A", "1K")
+    surface("Mosaic", "PavingStones147", "2K")
+    surface("Setts", "PavingStones048", "2K")
+    surface("Asphalt", "Asphalt025C", "1K")
+    facade_set(FACADES)
     print("hotovo:", sorted(os.listdir(OUT)))
 
 
