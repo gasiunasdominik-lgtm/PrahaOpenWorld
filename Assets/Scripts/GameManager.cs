@@ -65,6 +65,7 @@ public class GameManager : MonoBehaviour
             i++;
         }
 
+        new GameObject("Parkovani").AddComponent<ParkedCars>();
         new GameObject("Doprava").AddComponent<Traffic>();
         new GameObject("MHD").AddComponent<Transit>();
         new GameObject("Zakon").AddComponent<Law>();
@@ -295,15 +296,25 @@ public class GameManager : MonoBehaviour
         if (Boats.I && Boats.I.Interact(kb, hud, this)) { CheckLandmarks(focus); return; }
         if (Transit.I.Interact(kb, hud, this)) { CheckLandmarks(focus); UpdateDust(); return; }
         var near = currentCar ? null : NearestCar(4f);
-        hud.promptText.text = currentCar ? "[E] VYSTOUPIT    [H] TROUBIT    [R] OTOČIT AUTO" : near ? "[E] NASTOUPIT" : "";
+        bool parked = !currentCar && !near && ParkedCars.I && ParkedCars.I.Take(player.transform.position, 3.2f, false, out _, out _, out _, out _);
+        hud.promptText.text = currentCar ? "[E] VYSTOUPIT    [H] TROUBIT    [R] OTOČIT AUTO" : near ? "[E] NASTOUPIT" : parked ? "[E] VLOUPAT SE DO AUTA" : "";
         if (kb != null && kb.eKey.wasPressedThisFrame)
         {
             if (currentCar) ExitCar();
             else if (near) EnterCar(near);
+            else if (parked) TakeParked();
         }
 
         CheckLandmarks(focus);
         UpdateDust();
+    }
+
+    // a kerbside car out of the parked row becomes a real one, and the player gets in
+    public void TakeParked()
+    {
+        if (!ParkedCars.I.Take(player.transform.position, 3.2f, true, out var pos, out var yaw, out var paint, out var style)) return;
+        var car = SpawnCar(pos + Vector3.up * 0.05f, yaw, paint, style);
+        cars.Add(car); EnterCar(car);
     }
 
     CarController NearestCar(float maxDist)

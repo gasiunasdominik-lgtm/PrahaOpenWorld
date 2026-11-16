@@ -97,6 +97,7 @@ public static class MapBuilder
         var stone = Gfx.Mat(Palette.GothicStone, 0.08f);
         var rail = Gfx.Mat(Color.Lerp(Palette.Asphalt, Palette.Slate, 0.6f), 0.5f);
         BuildIprBridges(root); // before the streets: their stretches over water take the real deck's height
+        NotForCars();
         var streets = new MeshBuilder();
         int k = 0;
         StreetY.Clear(); StreetFloor.Clear(); StreetFlat.Clear();
@@ -104,19 +105,12 @@ public static class MapBuilder
         {
             StreetY.Add(Ribbon(streets, s.p, s.w, 0.12f, s.foot ? cobble : asphalt, stone));
             StreetFloor.Add(lastFloor); StreetFlat.Add(lastFlat);
-            // parked cars every few streets, on the kerb side of drivable ones
-            if (!s.foot && s.w >= 7.5f && s.p.Length >= 4 && (k++ % 9) == 0)
-            {
-                var a = new Vector3(s.p[0], 0, s.p[1]); var b = new Vector3(s.p[2], 0, s.p[3]);
-                var dir = (b - a).normalized; var mid = (a + b) / 2 + Vector3.Cross(Vector3.up, dir) * (s.w / 2 - 1.4f);
-                if ((b - a).magnitude > 20 && Height(mid.x, mid.z) > 0.5f)
-                    parking.Add((new Vector3(mid.x, Height(mid.x, mid.z) + 0.6f, mid.z), Quaternion.LookRotation(dir).eulerAngles.y));
-            }
         }
         foreach (var tr in D.trams) Ribbon(streets, tr.p, 1.6f, 0.16f, rail, null);
         streets.Build("Ulice", root, true, false);
 
         // squares are areas, not lines: give pedestrians a few invisible paths across each one
+        int origStreets = D.streets.Length;
         var walk = new List<Poly>(D.streets);
         foreach (var sq in D.squares)
         {
@@ -133,6 +127,7 @@ public static class MapBuilder
         D.streets = walk.ToArray();
 
         BuildBuildings(root);
+        BuildParkingSlots(origStreets);
         PlacesToDoors();
         BuildMetroEntrances(root);
         BuildSteps(root, Gfx.Pbr("Setts", 0.1f, 1.5f, new Color(0.92f, 0.9f, 0.86f)), Gfx.Pbr("Wall", 0.05f, 2f, new Color(0.78f, 0.75f, 0.7f)));
@@ -658,6 +653,110 @@ public static class MapBuilder
         }
         for (int i = 1; i + 1 < idx.Count; i++) res.Add(new[] { ring[idx[0]], ring[idx[i]], ring[idx[i + 1]] });
         return res;
+    }
+
+    // The Metropolitan plan files some stairways (Zámecké, Radnické schody) and steep paths as streets: cars keep off them.
+    static void NotForCars()
+    {
+        var ta = Resources.Load<TextAsset>("PrahaSteps");
+        var segs = new List<(Vector2 a, Vector2 b)>();
+        if (ta != null)
+            foreach (var st in JsonUtility.FromJson<StepsList>("{\"items\":" + ta.text + "}").items)
+                for (int i = 1; i < st.p.Length / 2; i++) segs.Add((new Vector2(st.p[2 * i - 2], st.p[2 * i - 1]), new Vector2(st.p[2 * i], st.p[2 * i + 1])));
+        var cells = new Dictionary<Vector2Int, List<int>>();
+        for (int k = 0; k < segs.Count; k++)
+        {
+            var (a, b) = segs[k];
+            for (float t = 0; t <= 1f; t += 0.1f) { var p = Vector2.Lerp(a, b, t); var c = new Vector2Int(Mathf.FloorToInt(p.x / 20f), Mathf.FloorToInt(p.y / 20f)); if (!cells.TryGetValue(c, out var l)) cells[c] = l = new List<int>(); if (!l.Contains(k)) l.Add(k); }
+        }
+        float DistSteps(Vector2 p)
+        {
+            float best = 1e9f; var c = new Vector2Int(Mathf.FloorToInt(p.x / 20f), Mathf.FloorToInt(p.y / 20f));
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
+                if (cells.TryGetValue(new Vector2Int(c.x + dx, c.y + dz), out var l))
+                    foreach (int k in l) { var (a, b) = segs[k]; var ab = b - a; float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-4f)); best = Mathf.Min(best, Vector2.Distance(p, a + ab * t)); }
+            return best;
+        }
+        int stairs = 0, steep = 0;
+        foreach (var s in D.streets)
+        {
+            if (s.foot) continue;
+            int n = s.p.Length / 2; var pts = new List<Vector2>();
+            for (int i = 1; i < n; i++)
+            {
+                var a = new Vector2(s.p[2 * i - 2], s.p[2 * i - 1]); var b = new Vector2(s.p[2 * i], s.p[2 * i + 1]);
+                int m = Mathf.Max(1, Mathf.CeilToInt(Vector2.Distance(a, b) / 3f));
+                for (int j = 0; j < m; j++) pts.Add(Vector2.Lerp(a, b, j / (float)m));
+            }
+            if (pts.Count == 0) continue;
+            int near = 0; foreach (var p in pts) if (DistSteps(p) < 5f) near++;
+            bool isStairs = near > pts.Count * 0.3f;
+            // sustained grade over 12 m (4 samples): Prague's steepest streets are ~12-15 %
+            bool tooSteep = false;
+            for (int j = 4; j < pts.Count && !tooSteep; j++)
+            {
+                float d = Vector2.Distance(pts[j], pts[j - 4]); if (d < 6f) continue;
+                tooSteep = Mathf.Abs(Height(pts[j].x, pts[j].y) - Height(pts[j - 4].x, pts[j - 4].y)) / d > 0.2f;
+            }
+            if (isStairs || tooSteep) { s.foot = true; if (isStairs) stairs++; else steep++; }
+        }
+        Debug.Log($"[Mapa] mimo auta: {stairs} schodišť, {steep} příkrých cest");
+    }
+
+    // Kerbside parking as in reality: rows of cars along both kerbs of residential streets, a car every ~5.7 m with gaps,
+    // nothing at junctions or bends, on bridges, by tram tracks or traffic lights, on steep grades or against a building.
+    public static readonly List<(Vector3 pos, float yaw)> ParkingSlots = new();
+    static void BuildParkingSlots(int count)
+    {
+        ParkingSlots.Clear();
+        var rng = new System.Random(17);
+        var avoid = new HashSet<Vector2Int>(); // tram tracks, signals: 8 m cells
+        void Mark(float x, float z, int r) { var c = new Vector2Int(Mathf.FloorToInt(x / 8f), Mathf.FloorToInt(z / 8f)); for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) avoid.Add(new Vector2Int(c.x + dx, c.y + dz)); }
+        foreach (var t in D.trams) for (int i = 1; i < t.p.Length / 2; i++) { var a = new Vector2(t.p[2 * i - 2], t.p[2 * i - 1]); var b = new Vector2(t.p[2 * i], t.p[2 * i + 1]); int m = Mathf.CeilToInt(Vector2.Distance(a, b) / 4f); for (int j = 0; j <= m; j++) { var p = Vector2.Lerp(a, b, j / (float)Mathf.Max(m, 1)); Mark(p.x, p.y, 1); } }
+        foreach (var sg in D.signals) Mark(sg.p[0], sg.p[1], 2);
+        // street end points: junctions
+        var ends = new HashSet<Vector2Int>();
+        for (int s = 0; s < count; s++) { var p = D.streets[s].p; int n = p.Length / 2; ends.Add(new Vector2Int(Mathf.RoundToInt(p[0] / 4f), Mathf.RoundToInt(p[1] / 4f))); ends.Add(new Vector2Int(Mathf.RoundToInt(p[2 * n - 2] / 4f), Mathf.RoundToInt(p[2 * n - 1] / 4f))); }
+        var half = new Vector3(0.95f, 0.6f, 2.3f);
+        for (int s = 0; s < count; s++)
+        {
+            var st = D.streets[s];
+            if (st.foot || st.w < 7f || st.w > 16f) continue;
+            int n = st.p.Length / 2; if (n < 2) continue;
+            float total = 0; for (int i = 1; i < n; i++) total += Vector2.Distance(new Vector2(st.p[2 * i - 2], st.p[2 * i - 1]), new Vector2(st.p[2 * i], st.p[2 * i + 1]));
+            if (total < 30f) continue;
+            float along = 0;
+            for (int i = 1; i < n; i++)
+            {
+                var a = new Vector2(st.p[2 * i - 2], st.p[2 * i - 1]); var b = new Vector2(st.p[2 * i], st.p[2 * i + 1]);
+                float L = Vector2.Distance(a, b); var d = (b - a) / Mathf.Max(L, 1e-3f);
+                // keep clear of bends: 6 m at each inner vertex with a turn
+                for (float u = 6f; u < L - 6f; u += 5.7f)
+                {
+                    float at = along + u; if (at < 12f || at > total - 12f) continue;
+                    var p = a + d * u;
+                    if (avoid.Contains(new Vector2Int(Mathf.FloorToInt(p.x / 8f), Mathf.FloorToInt(p.y / 8f)))) continue;
+                    if (ends.Contains(new Vector2Int(Mathf.RoundToInt(p.x / 4f), Mathf.RoundToInt(p.y / 4f)))) continue;
+                    foreach (float side in new[] { -1f, 1f })
+                    {
+                        if (rng.NextDouble() < 0.22) continue; // a free space now and then
+                        var sd = new Vector2(-d.y, d.x) * side * (st.w / 2f + 1.0f); var q = p + sd; // the parking lane just beyond the carriageway
+                        float h = Height(q.x, q.y); if (h < 0.3f) continue;
+                        if (Mathf.Abs(Height(q.x + d.x * 2.3f, q.y + d.y * 2.3f) - Height(q.x - d.x * 2.3f, q.y - d.y * 2.3f)) / 4.6f > 0.08f) continue;
+                        if (!Physics.Raycast(new Vector3(q.x, h + 30f, q.y), Vector3.down, out var hit, 60f)) continue;
+                        var nm = hit.collider.name; if (!(nm.StartsWith("Ulice") || nm.StartsWith("Teren"))) continue;
+                        var yaw = Mathf.Atan2(d.x, d.y) * Mathf.Rad2Deg + (side > 0 ? 0f : 180f) + (float)(rng.NextDouble() - 0.5) * 3f;
+                        var c = new Vector3(q.x, hit.point.y, q.y);
+                        bool blocked = false;
+                        foreach (var o in Physics.OverlapBox(c + Vector3.up * 0.8f, half, Quaternion.Euler(0, yaw, 0)))
+                            if (!(o.name.StartsWith("Ulice") || o.name.StartsWith("Teren") || o.name.StartsWith("Schody"))) { blocked = true; break; }
+                        if (!blocked) ParkingSlots.Add((c, yaw));
+                    }
+                }
+                along += L;
+            }
+        }
+        Debug.Log($"[Mapa] parkovacích míst obsazeno: {ParkingSlots.Count}");
     }
 
     [Serializable] class Steps { public string n; public float w; public int c; public float[] p; }
