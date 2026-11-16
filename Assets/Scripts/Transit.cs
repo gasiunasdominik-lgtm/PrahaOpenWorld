@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using TMPro;
 
 // Public transport: trams on the real tram tracks stopping at real stops (board/alight with E),
 // and the metro: go down an entrance, pick a station on line A/B/C, come up there; the ride costs game time.
@@ -37,6 +38,74 @@ public class Transit : MonoBehaviour
             float x = D.tramStops[k].p[0], z = D.tramStops[k].p[1];
             stops[k] = new Vector3(x, TrackY(x, z), z); stopNames[k] = D.tramStops[k].n;
         }
+        BuildStops();
+    }
+
+    // Every stop gets what Prague stops have (after photos): a glazed steel shelter with a bench, the DPP stop pole with its
+    // name board, and a raised kerb - on the side of its track away from houses, the other track and the car lanes.
+    void BuildStops()
+    {
+        var D = MapBuilder.D; var mb = new MeshBuilder(); var root = new GameObject("Zastavky").transform; root.SetParent(transform, false);
+        var glass = Gfx.Mat(new Color(0.16f, 0.21f, 0.24f), 0.97f); var steel = Gfx.Mat(new Color(0.32f, 0.34f, 0.36f), 0.6f);
+        var roof = Gfx.Mat(new Color(0.22f, 0.23f, 0.24f), 0.4f); var kerb = Gfx.Pbr("Setts", 0.12f, 1.5f, new Color(0.8f, 0.78f, 0.75f));
+        var white = Gfx.Mat(new Color(0.95f, 0.95f, 0.93f), 0.4f); var redM = Gfx.Mat(new Color(0.75f, 0.08f, 0.1f), 0.5f);
+        var wood = Gfx.Mat(new Color(0.42f, 0.28f, 0.16f), 0.3f);
+        for (int k = 0; k < stops.Length; k++)
+        {
+            var p = stops[k]; if (p.y < 0.5f) continue; // (on a bridge deck)
+            // track direction: the nearest tram segment
+            Vector3 dir = Vector3.forward; float bd = float.MaxValue; int own = -1;
+            for (int w = 0; w < D.trams.Length; w++)
+            {
+                var q = D.trams[w].p;
+                for (int i = 0; i + 3 < q.Length; i += 2)
+                {
+                    var a = new Vector3(q[i], 0, q[i + 1]); var b = new Vector3(q[i + 2], 0, q[i + 3]); var ab = b - a;
+                    float tt = Mathf.Clamp01(Vector3.Dot(new Vector3(p.x, 0, p.z) - a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-4f));
+                    float d = (a + ab * tt - new Vector3(p.x, 0, p.z)).sqrMagnitude;
+                    if (d < bd) { bd = d; dir = ab.normalized; own = w; }
+                }
+            }
+            var side = Vector3.Cross(Vector3.up, dir); Vector3 best = side * 3.4f; float bs = float.MaxValue;
+            foreach (float off in new[] { 3.4f, -3.4f, 5.5f, -5.5f })
+            {
+                var c = p + side * off; float sc = Mathf.Abs(off) * 0.2f;
+                foreach (var col in Physics.OverlapBox(c + Vector3.up * 1.5f, new Vector3(2.5f, 1.2f, 1f), Quaternion.LookRotation(dir)))
+                    if (col.name.StartsWith("Domy") || col.name.StartsWith("IprDomy")) { sc += 10f; break; }
+                for (int w = 0; w < D.trams.Length; w++)
+                {
+                    if (w == own) continue; var q = D.trams[w].p;
+                    for (int i = 0; i + 1 < q.Length; i += 2) { float dx = q[i] - c.x, dz = q[i + 1] - c.z; if (dx * dx + dz * dz < 2.2f * 2.2f) { sc += 4f; i = q.Length; } }
+                }
+                if (sc < bs) { bs = sc; best = side * off; }
+            }
+            var o = p + best; o.y = MapBuilder.Height(o.x, o.z) + 0.12f; var away = best.normalized; var rot = Quaternion.LookRotation(dir);
+            Vector3 L(float across, float y, float along) => o + away * across + Vector3.up * y + dir * along;
+            mb.Box(kerb, L(-0.6f, 0.09f, 0), new Vector3(2.6f, 0.18f, 18f), rot, 1.5f); // raised boarding kerb
+            mb.Box(glass, L(0.75f, 1.3f, 0), new Vector3(0.04f, 2.0f, 4.2f), Quaternion.LookRotation(dir)); // the back wall
+            foreach (float e in new[] { -2.1f, 2.1f })
+            {
+                mb.Box(glass, L(0.15f, 1.3f, e), new Vector3(1.2f, 2.0f, 0.04f), Quaternion.LookRotation(away));
+                foreach (float a in new[] { -0.45f, 0.78f }) mb.Box(steel, L(a, 1.25f, e), new Vector3(0.08f, 2.5f, 0.08f), rot);
+            }
+            mb.Box(roof, L(0.1f, 2.55f, 0), new Vector3(1.8f, 0.1f, 4.6f), Quaternion.LookRotation(dir, Vector3.up) * Quaternion.Euler(0, 0, 3f), 0, true, true);
+            mb.Box(wood, L(0.45f, 0.48f, 0), new Vector3(0.45f, 0.06f, 2.6f), rot); // bench
+            foreach (float bz in new[] { -1.1f, 1.1f }) mb.Box(steel, L(0.45f, 0.24f, bz), new Vector3(0.06f, 0.48f, 0.06f), rot);
+            // the stop pole: grey mast, a white board with the red tram band, timetable box
+            var pole = L(-0.9f, 0, 4.2f);
+            mb.Box(steel, pole + Vector3.up * 1.6f, new Vector3(0.09f, 3.2f, 0.09f), rot);
+            mb.Box(white, pole + Vector3.up * 2.75f, new Vector3(0.05f, 0.5f, 0.9f), rot);
+            mb.Box(redM, pole + Vector3.up * 3.08f, new Vector3(0.06f, 0.16f, 0.9f), rot);
+            mb.Box(white, pole + Vector3.up * 1.5f + away * 0.1f, new Vector3(0.08f, 0.6f, 0.45f), rot);
+            foreach (float sgn in new[] { 1f, -1f })
+            {
+                var t = new GameObject("Nazev").AddComponent<TextMeshPro>(); t.transform.SetParent(root, false);
+                t.transform.SetPositionAndRotation(pole + Vector3.up * 2.75f + away * (0.035f * -sgn), Quaternion.LookRotation(away * sgn));
+                t.text = stopNames[k]; t.fontSize = 1.1f; t.color = new Color(0.1f, 0.1f, 0.12f); t.fontStyle = FontStyles.Bold;
+                t.alignment = TextAlignmentOptions.Center; t.rectTransform.sizeDelta = new Vector2(0.86f, 0.45f); t.enableAutoSizing = true; t.fontSizeMin = 0.5f; t.fontSizeMax = 1.1f;
+            }
+        }
+        mb.Build("ZastavkyMesh", root, false);
     }
 
     // Ground, or the bridge deck when the track crosses the river (highest street vertex nearby).
@@ -209,7 +278,8 @@ public class Transit : MonoBehaviour
 // A three-section articulated tram. Sections follow a breadcrumb trail of the front, so it bends through curves.
 public class Tram : MonoBehaviour
 {
-    public bool dead; public Transform camTarget;
+    public bool dead; public Transform camTarget; public int route;
+    static readonly int[] Routes = { 2, 3, 5, 6, 9, 12, 14, 15, 17, 18, 20, 22, 23, 24 }; // lines through the centre
     public bool AtStop => dwell > 0f;
     public string StopName => lastStop >= 0 ? Transit.I.stopNames[lastStop] : "";
     public Vector3 Mid => secs[1].transform.position; public Quaternion MidRot => secs[1].transform.rotation;
@@ -222,19 +292,65 @@ public class Tram : MonoBehaviour
     {
         var go = new GameObject("Tramvaj"); go.transform.SetParent(parent, false);
         var t = go.AddComponent<Tram>(); t.net = net; t.rng = rng; t.s = s; t.i = v; t.dir = dir;
-        var red = Gfx.Mat(new Color(0.75f, 0.09f, 0.1f), 0.5f); var cream = Gfx.Mat(new Color(0.93f, 0.88f, 0.74f), 0.4f);
-        var glass = Gfx.Mat(Palette.Glass, 0.9f); var grey = Gfx.Mat(Palette.Tire, 0.3f);
+        // Prague liveries after photos: red below, cream band, black glazing; 15T ForCity (low floor, long sloped nose) or
+        // the boxy T3 (high floor, cream band under the windows); grey roof gear, a pantograph on the middle section
+        bool t3 = rng.NextDouble() < 0.3; t.route = Routes[rng.Next(Routes.Length)];
+        var red = Gfx.Mat(new Color(0.72f, 0.07f, 0.09f), 0.6f); var cream = Gfx.Mat(new Color(0.94f, 0.9f, 0.78f), 0.5f);
+        var glass = Gfx.Mat(new Color(0.06f, 0.07f, 0.08f), 0.92f); var grey = Gfx.Mat(Palette.Tire, 0.3f);
+        var roofGrey = Gfx.Mat(new Color(0.55f, 0.56f, 0.57f), 0.4f); var doorM = Gfx.Mat(new Color(0.18f, 0.18f, 0.19f), 0.7f);
+        var head = Gfx.Emissive(Palette.HeadLight, 1.8f); var tail = Gfx.Emissive(new Color(0.9f, 0.08f, 0.05f), 1.4f);
+        var amber = Gfx.Emissive(new Color(1f, 0.62f, 0.12f), 1.6f);
         for (int k = 0; k < 3; k++)
         {
             var sec = new GameObject("Clanek" + k); sec.transform.SetParent(go.transform, false); sec.layer = Traffic.CarLayer; sec.tag = "Player"; // camera deoccluder ignores it, as with cars
             var mb = new MeshBuilder();
-            mb.Box(grey, new Vector3(0, 0.35f, 0), new Vector3(2.2f, 0.5f, 8.6f));
-            mb.Box(red, new Vector3(0, 1.3f, 0), new Vector3(2.46f, 1.5f, 9.3f));
-            mb.Box(glass, new Vector3(0, 2.45f, 0), new Vector3(2.48f, 0.85f, 8.9f));
-            mb.Box(cream, new Vector3(0, 3.05f, 0), new Vector3(2.46f, 0.38f, 9.3f));
-            mb.Box(grey, new Vector3(0, 3.4f, 0), new Vector3(1.6f, 0.35f, 6f));
-            if (k == 0) mb.Box(Gfx.Emissive(Palette.HeadLight, 1.6f), new Vector3(0, 1.0f, 4.66f), new Vector3(1.6f, 0.2f, 0.05f));
+            float fl = t3 ? 0.9f : 0.35f, L = 9.3f, wy = t3 ? 2.35f : 2.05f; // floor, length, window band centre
+            mb.Box(grey, new Vector3(0, fl * 0.5f + 0.1f, 0), new Vector3(2.2f, fl + 0.2f, L - 0.6f)); // bogies / skirt
+            mb.Box(red, new Vector3(0, (fl + wy - 0.5f) / 2f, 0), new Vector3(2.46f, wy - 0.5f - fl, L));
+            mb.Box(glass, new Vector3(0, wy, 0), new Vector3(2.48f, 1.0f, L - 0.2f));
+            mb.Box(t3 ? cream : red, new Vector3(0, wy + 0.65f, 0), new Vector3(2.46f, 0.3f, L));
+            mb.Box(cream, new Vector3(0, t3 ? wy - 0.62f : wy + 0.88f, 0), new Vector3(2.47f, 0.22f, L)); // the cream band
+            mb.Box(roofGrey, new Vector3(0, wy + 1.0f, 0), new Vector3(2.3f, 0.12f, L - 0.3f));
+            mb.Box(roofGrey, new Vector3(0, wy + 1.25f, k == 1 ? -2.5f : 0), new Vector3(1.7f, 0.38f, 4.5f)); // roof gear covers
+            foreach (float sx in new[] { -1f, 1f }) // double doors, glazed
+                foreach (float dz in new[] { -2.6f, 2.6f })
+                {
+                    mb.Box(doorM, new Vector3(sx * 1.24f, (fl + wy + 0.45f) / 2f, dz), new Vector3(0.04f, wy + 0.45f - fl, 1.3f));
+                    mb.Box(glass, new Vector3(sx * 1.25f, wy - 0.1f, dz), new Vector3(0.04f, 1.1f, 1.1f));
+                }
+            if (k == 1) // pantograph
+            {
+                var pz = new Vector3(0, wy + 1.45f, 2.2f);
+                mb.Box(grey, pz + new Vector3(0, 0.45f, -0.4f), new Vector3(0.06f, 0.06f, 1.3f), Quaternion.Euler(-40, 0, 0));
+                mb.Box(grey, pz + new Vector3(0, 0.95f, 0.05f), new Vector3(0.06f, 0.06f, 1.2f), Quaternion.Euler(45, 0, 0));
+                mb.Box(grey, pz + new Vector3(0, 1.38f, -0.2f), new Vector3(1.5f, 0.06f, 0.12f));
+            }
+            if (k != 1) // the ends: 15T a long sloped nose with a big dark windscreen, T3 a rounded box; lights, route display
+            {
+                float e = k == 0 ? 1f : -1f, z = e * L / 2f;
+                if (!t3)
+                {
+                    mb.Box(red, new Vector3(0, (fl + 1.6f) / 2f, z + e * 0.35f), new Vector3(2.3f, 1.6f - fl, 0.7f));
+                    mb.Box(glass, new Vector3(0, 2.35f, z + e * 0.22f), new Vector3(2.2f, 1.5f, 0.5f), Quaternion.Euler(e * -14f, 0, 0));
+                    mb.Box(red, new Vector3(0, 3.1f, z + e * 0.05f), new Vector3(2.3f, 0.35f, 0.3f));
+                }
+                else
+                {
+                    mb.Box(red, new Vector3(0, (fl + 2.0f) / 2f, z + e * 0.25f), new Vector3(2.3f, 2.0f - fl, 0.5f));
+                    mb.Box(glass, new Vector3(0, 2.5f, z + e * 0.2f), new Vector3(2.1f, 1.0f, 0.42f), Quaternion.Euler(e * -6f, 0, 0));
+                }
+                float lz = z + e * (t3 ? 0.51f : 0.71f);
+                foreach (float hx in new[] { -0.8f, 0.8f }) mb.Box(k == 0 ? head : tail, new Vector3(hx, fl + 0.55f, lz), new Vector3(0.28f, 0.16f, 0.05f));
+                mb.Box(amber, new Vector3(0, t3 ? 3.15f : 3.0f, z + e * (t3 ? 0.46f : 0.21f)), new Vector3(1.2f, 0.26f, 0.05f)); // route display
+            }
             mb.Build("Mesh", sec.transform, false).isStatic = false;
+            if (k == 0)
+            {
+                var num = new GameObject("Linka").AddComponent<TextMeshPro>(); num.transform.SetParent(sec.transform, false);
+                num.transform.localPosition = new Vector3(0, t3 ? 3.15f : 3.0f, 9.3f / 2f + (t3 ? 0.49f : 0.24f)); num.transform.localRotation = Quaternion.Euler(0, 180f, 0);
+                num.text = t.route.ToString(); num.fontSize = 2.2f; num.color = Color.black; num.fontStyle = FontStyles.Bold;
+                num.alignment = TextAlignmentOptions.Center; num.rectTransform.sizeDelta = new Vector2(1.2f, 0.3f); num.textWrappingMode = TextWrappingModes.NoWrap;
+            }
             var col = sec.AddComponent<BoxCollider>(); col.center = new Vector3(0, 1.75f, 0); col.size = new Vector3(2.46f, 3.2f, 9.3f);
             var rb = sec.AddComponent<Rigidbody>(); rb.isKinematic = true; rb.interpolation = RigidbodyInterpolation.Interpolate;
             t.secs[k] = rb;
