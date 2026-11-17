@@ -300,12 +300,14 @@ public class GameManager : MonoBehaviour
         if (Transit.I.Interact(kb, hud, this)) { CheckLandmarks(focus); UpdateDust(); return; }
         var near = currentCar ? null : NearestCar(4f);
         bool parked = !currentCar && !near && ParkedCars.I && ParkedCars.I.Take(player.transform.position, 3.2f, false, out _, out _, out _, out _);
-        hud.promptText.text = currentCar ? "[E] VYSTOUPIT    [H] TROUBIT    [R] OTOČIT AUTO" : near ? "[E] NASTOUPIT" : parked ? "[E] VLOUPAT SE DO AUTA" : "";
+        bool locked = parked && ParkedCars.I.IsLocked(player.transform.position, 3.2f);
+        hud.promptText.text = currentCar ? "[E] VYSTOUPIT    [H] TROUBIT    [R] OTOČIT AUTO" : near ? "[E] NASTOUPIT" : locked ? "ZAMČENÉ AUTO S ALARMEM" : parked ? "[E] VLOUPAT SE DO AUTA" : "";
         if (kb != null && kb.eKey.wasPressedThisFrame)
         {
             if (currentCar) ExitCar();
             else if (near) EnterCar(near);
-            else if (parked) TakeParked();
+            else if (parked && !locked) TakeParked();
+            else if (locked) { hud.Toast("Tohle auto má alarm – zkus jiné", Palette.UILight); GameAudio.I?.PlayAt(GameAudio.I.horn, player.transform.position, 0.5f); }
         }
 
         CheckLandmarks(focus);

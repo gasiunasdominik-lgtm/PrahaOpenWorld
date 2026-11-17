@@ -170,7 +170,7 @@ public class Law : MonoBehaviour
         {
             if (p.gameObject.activeSelf) { p.goal = to; continue; }
             var net = Traffic.I.net;
-            if (!net.RandomVertex(to, 220f, 400f, rng, out int s, out int v)) continue;
+            if (!net.RandomVertex(to, 140f, 280f, rng, out int s, out int v)) continue;
             int dir = v == net.N(s) - 1 ? -1 : v == 0 ? 1 : 1;
             var a = net.V(s, v); var b = net.V(s, v + dir);
             var fwd = new Vector3(b.x - a.x, 0, b.z - a.z).normalized;

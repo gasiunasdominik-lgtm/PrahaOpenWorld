@@ -423,7 +423,7 @@ public class Driver : MonoBehaviour
     }
 
     // Lane width and speed limit (km/h) by the real street's width: wide = 50, others 30–40.
-    void Setup() { lane = LaneOf(net.W[s]); cruise = (police ? 50f : net.W[s] >= 20f ? 50f : net.W[s] >= 14f ? 40f : net.W[s] >= 8f ? 30f : 20f) / 3.6f; } // 20 in old-town lanes
+    void Setup() { lane = LaneOf(net.W[s]); cruise = (police ? 65f : net.W[s] >= 20f ? 50f : net.W[s] >= 14f ? 40f : net.W[s] >= 8f ? 30f : 20f) / 3.6f; } // 20 in old-town lanes
     void Plan()
     {
         if (police)
@@ -494,20 +494,34 @@ public class Driver : MonoBehaviour
         var target = chasing ? chase.position : Ahead(proj, 3f + Mathf.Abs(v) * 0.4f);
         var local = transform.InverseTransformPoint(target);
         car.aiSteer = Mathf.Clamp(Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg / 25f, -1f, 1f);
+        // whiskers from the front corners: a wall, a house corner or a metro entrance close ahead pushes the wheel away
+        // (the logged crashes were all front corners clipping buildings when cutting a bend)
+        float wall = 0f;
+        foreach (float side in new[] { -1f, 1f })
+        {
+            var o = transform.TransformPoint(new Vector3(side * 0.8f, 0.9f, 1.9f));
+            var dir2 = (transform.forward * 0.8f + transform.right * side * 0.6f).normalized;
+            if (Physics.Raycast(o, dir2, out var wh, 2.2f + Mathf.Abs(v) * 0.25f, ~(1 << Traffic.CarLayer), QueryTriggerInteraction.Ignore)
+                && wh.normal.y < 0.5f && !wh.rigidbody && !(wh.collider is CharacterController))
+            { wall += side * (1f - wh.distance / (2.2f + Mathf.Abs(v) * 0.25f)); }
+        }
+        if (wall != 0f) car.aiSteer = Mathf.Clamp(car.aiSteer - wall * 1.6f, -1f, 1f);
+        if (Mathf.Abs(wall) > 0.4f) cruiseCap = 3f; else cruiseCap = 99f;
 
         // speed: limit, slow for bends, stop for things ahead and red lights
         var far = Ahead(proj, 25f) - pos; far.y = 0;
         var fwd = transform.forward; fwd.y = 0; fwd.Normalize();
         var look = target - pos; look.y = 0; look = look.sqrMagnitude > 0.01f ? look.normalized : fwd;
-        float want = chasing ? 17f * Mathf.Lerp(1f, 0.4f, Vector3.Angle(fwd, look) / 90f) : cruise * Mathf.Lerp(1f, 0.35f, Vector3.Angle(fwd, far) / 90f);
+        float want = chasing ? 24f * Mathf.Lerp(1f, 0.45f, Vector3.Angle(fwd, look) / 90f) : cruise * Mathf.Lerp(1f, 0.35f, Vector3.Angle(fwd, far) / 90f);
+        want = Mathf.Min(want, cruiseCap);
         float range = 8f + v * v / 8f;
         bool obstacle = false;
         if (Physics.BoxCast(pos + Vector3.up * 1f + transform.forward * 2.5f, new Vector3(0.85f, 0.45f, 0.2f), look, out var hit,
                 Quaternion.LookRotation(look), range, ~0, QueryTriggerInteraction.Ignore)
-            && ((hit.rigidbody != null && hit.rigidbody != rb) || hit.collider is CharacterController))
+            && ((hit.rigidbody != null && hit.rigidbody != rb) || hit.collider is CharacterController || hit.collider.name == "P"))
         {
             obstacle = true;
-            want = Mathf.Min(want, Mathf.Sqrt(2f * 4.5f * Mathf.Max(0f, hit.distance - 2f)));
+            want = Mathf.Min(want, Mathf.Sqrt(2f * 4.5f * Mathf.Max(0f, hit.distance - 3f)));
             if (hit.collider is CharacterController || (GameManager.I.currentCar && hit.rigidbody == GameManager.I.currentCar.GetComponent<Rigidbody>()))
                 blocked += Time.deltaTime;
         }
@@ -516,6 +530,9 @@ public class Driver : MonoBehaviour
         blockedAny = obstacle && v < 2f && blocked == 0f ? blockedAny + Time.deltaTime : 0f; // not when it is the player in the way
         if (police && blockedAny > 2f && overtake <= 0f) overtake = 5f;
         if ((overtake -= Time.deltaTime) > 0f) laneSign = -1f; else laneSign = 1f;
+        // junctions: give way to a car crossing from the right (pravidlo pravé ruky) and never into a car already in the
+        // junction; parked rows (static colliders) count as obstacles too, so nobody clips a parked car
+        if (!police && !chasing && Yield(pos, fwd, v)) { want = Mathf.Min(want, 0f); waitYield += Time.deltaTime; } else waitYield = 0f;
         float stop = police ? float.MaxValue : SignalStop(pos, fwd); // blue lights: no red for the police
         if (stop < float.MaxValue) want = Mathf.Min(want, Mathf.Sqrt(2f * 4f * Mathf.Max(0f, stop)));
         if (shock > 0f) { shock -= Time.deltaTime; want = 0f; }
@@ -529,6 +546,27 @@ public class Driver : MonoBehaviour
         if (wedged > 1.5f || (police && blockedAny > 3f)) { reverse = 1.6f; wedged = 0f; blockedAny = 0f; } // police backs up and tries again
         if (reverse > 0f) { reverse -= Time.deltaTime; car.aiThrottle = -0.8f; car.aiSteer = -car.aiSteer; }
         stuck = v < 0.5f && stop == float.MaxValue && shock <= 0f ? stuck + Time.deltaTime : 0f; // incl. gridlock behind others
+    }
+
+    float cruiseCap = 99f;
+    float waitYield; static readonly Collider[] near = new Collider[16];
+    bool Yield(Vector3 pos, Vector3 fwd, float v)
+    {
+        if (waitYield > 4f) return false; // nobody moves: go (a four-way stand-off resolves itself)
+        var right = new Vector3(fwd.z, 0, -fwd.x);
+        int n = Physics.OverlapSphereNonAlloc(pos + fwd * (6f + Mathf.Max(0f, v) * 0.8f), 6f, near, 1 << Traffic.CarLayer, QueryTriggerInteraction.Ignore);
+        for (int k = 0; k < n; k++)
+        {
+            var orb = near[k].attachedRigidbody; if (!orb || orb == rb) continue;
+            var d = orb.position - pos; d.y = 0; float ahead = Vector3.Dot(d, fwd); if (ahead < 2f) continue;
+            var ov = orb.linearVelocity; ov.y = 0; var of = orb.transform.forward; of.y = 0; of.Normalize();
+            float cross = Mathf.Abs(Vector3.Dot(of, fwd));
+            if (cross > 0.75f) continue; // same or opposite direction: the box cast handles the one in front
+            bool fromRight = Vector3.Dot(d, right) > 0f;
+            bool inJunction = ov.magnitude > 1f && ahead < 9f; // it is crossing our path right now
+            if (inJunction || (fromRight && ov.magnitude > 0.5f)) return true;
+        }
+        return false;
     }
 
     // Distance to the stop line of the nearest red light ahead; none once inside the junction.

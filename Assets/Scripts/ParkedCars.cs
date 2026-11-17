@@ -8,7 +8,7 @@ public class ParkedCars : MonoBehaviour
 {
     public static ParkedCars I;
     const float Tile = 200f, ShowDist = 260f;
-    class Slot { public Vector3 pos; public float yaw; public int paint, style; public bool gone; }
+    class Slot { public Vector3 pos; public float yaw; public int paint, style; public bool gone, locked; }
     readonly Dictionary<Vector2Int, List<Slot>> tiles = new();
     readonly Dictionary<Vector2Int, GameObject> built = new();
     Material[] paints; Material glass, trim, chrome, head, tail;
@@ -30,17 +30,29 @@ public class ParkedCars : MonoBehaviour
         glass = Gfx.Mat(Palette.Glass, 0.92f); trim = Gfx.Mat(Palette.Tire, 0.3f); chrome = Gfx.Mat(Palette.Chrome, 0.7f);
         head = Gfx.Mat(new Color(0.85f, 0.85f, 0.8f), 0.9f); tail = Gfx.Mat(new Color(0.5f, 0.05f, 0.05f), 0.7f);
         var rng = new System.Random(23);
+        // occupancy: kerbs in the centre and around shops, pubs and sights are full, quiet residential streets half empty
+        var busy = new Dictionary<Vector2Int, float>(); int skipped = 0;
         foreach (var (pos, yaw) in MapBuilder.ParkingSlots)
         {
+            var cell = new Vector2Int(Mathf.FloorToInt(pos.x / 100f), Mathf.FloorToInt(pos.z / 100f));
+            if (!busy.TryGetValue(cell, out float occ))
+            {
+                var c = new Vector3((cell.x + 0.5f) * 100f, 0, (cell.y + 0.5f) * 100f);
+                float centre = Mathf.Clamp01(1f - Vector2.Distance(new Vector2(c.x, c.z), new Vector2(694f, 114f)) / 2200f);
+                float shops = Mathf.Clamp01(Places.OpenNear(c, 13f, 150f) / 10f);
+                float hot = 0f; foreach (var h in Pedestrians.Hotspots) hot = Mathf.Max(hot, Mathf.Clamp01(1f - (Vector2.Distance(new Vector2(c.x, c.z), (h.a + h.b) / 2f) - h.r) / 400f));
+                busy[cell] = occ = Mathf.Clamp(0.25f + 0.3f * centre + 0.3f * shops + 0.2f * hot, 0.25f, 0.95f);
+            }
+            if (rng.NextDouble() > occ) { skipped++; continue; }
             double r = rng.NextDouble(); int pi = 0;
             for (float acc = 0; pi < Mix.Length - 1; pi++) { acc += Mix[pi].w; if (r < acc) break; }
-            var s = new Slot { pos = pos, yaw = yaw, paint = pi, style = new[] { 0, 1, 0, 3, 1, 2, 0, 1, 3, 1 }[rng.Next(10)] };
+            var s = new Slot { pos = pos, yaw = yaw, paint = pi, style = new[] { 0, 1, 0, 3, 1, 2, 0, 1, 3, 1 }[rng.Next(10)], locked = rng.NextDouble() < 0.55 };
             var key = Key(pos);
             if (!tiles.TryGetValue(key, out var l)) tiles[key] = l = new List<Slot>();
             l.Add(s);
         }
         foreach (var k in tiles.Keys) Rebuild(k);
-        Debug.Log($"[Parkování] {MapBuilder.ParkingSlots.Count} aut v {tiles.Count} dlaždicích");
+        Debug.Log($"[Parkování] {MapBuilder.ParkingSlots.Count - skipped} aut ({skipped} míst volných) v {tiles.Count} dlaždicích");
     }
 
     static Vector2Int Key(Vector3 p) => new(Mathf.FloorToInt(p.x / Tile), Mathf.FloorToInt(p.z / Tile));
@@ -123,6 +135,16 @@ public class ParkedCars : MonoBehaviour
             bool on = (c - p).sqrMagnitude < (ShowDist + Tile * 0.7f) * (ShowDist + Tile * 0.7f);
             if (kv.Value.activeSelf != on) kv.Value.SetActive(on);
         }
+    }
+
+    // whether the nearest parked car within r is locked (with an alarm: no way in without a tool)
+    public bool IsLocked(Vector3 at, float r)
+    {
+        Slot best = null; float bd = r * r; var k0 = Key(at);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
+            if (tiles.TryGetValue(new Vector2Int(k0.x + dx, k0.y + dz), out var l))
+                foreach (var s in l) { if (s.gone) continue; float d = (s.pos - at).sqrMagnitude; if (d < bd) { bd = d; best = s; } }
+        return best != null && best.locked;
     }
 
     // The nearest parked car within r, taken out of the row: its pose, paint and body style for a drivable replacement.
