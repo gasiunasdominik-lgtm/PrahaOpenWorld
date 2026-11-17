@@ -63,16 +63,8 @@ public class CarController : MonoBehaviour
         rb.WakeUp();
     }
 
-    float driverCheck;
     void Update()
     {
-        if (driverModel && (driverCheck -= Time.deltaTime) < 0f)
-        {
-            // the seated driver is a full skinned person: drawn only near the camera, where the glass lets you see them
-            driverCheck = 0.4f + Random.value * 0.2f; var cam = Camera.main;
-            bool near = cam && (cam.transform.position - transform.position).sqrMagnitude < 45f * 45f;
-            var hold = driverModel.transform.parent.gameObject; if (hold.activeSelf != near) hold.SetActive(near);
-        }
         float tIn = 0, sIn = 0;
         if (driven)
         {

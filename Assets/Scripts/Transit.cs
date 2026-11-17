@@ -306,9 +306,11 @@ public class Tram : MonoBehaviour
             var mb = new MeshBuilder();
             float fl = t3 ? 0.9f : 0.35f, L = 9.3f, wy = t3 ? 2.35f : 2.05f; // floor, length, window band centre
             mb.Box(grey, new Vector3(0, fl * 0.5f + 0.1f, 0), new Vector3(2.2f, fl + 0.2f, L - 0.6f)); // bogies / skirt
-            mb.Box(red, new Vector3(0, (fl + wy - 0.5f) / 2f, 0), new Vector3(2.46f, wy - 0.5f - fl, L));
-            mb.Box(glass, new Vector3(0, wy, 0), new Vector3(2.48f, 1.0f, L - 0.2f));
-            mb.Box(t3 ? cream : red, new Vector3(0, wy + 0.65f, 0), new Vector3(2.46f, 0.3f, L));
+            Vehicles.Shell(mb, red, new Vector3(0, (fl + wy - 0.5f) / 2f, 0), new Vector3(2.46f, wy - 0.5f - fl, L));
+            Vehicles.GlassBand(mb, new Vector3(0, wy, 0), new Vector3(2.48f, 1.0f, L - 0.2f));
+            Vehicles.Shell(mb, t3 ? cream : red, new Vector3(0, wy + 0.65f, 0), new Vector3(2.46f, 0.3f, L));
+            // the saloon: grey floor, light panels, red-and-grey DPP seats, yellow poles (photos of 15T and T3 interiors)
+            Vehicles.Saloon(mb, 2.4f, -L / 2f + (k == 0 ? 2.2f : 0.3f), L / 2f - (k == 2 ? 2.2f : 0.3f), fl, wy + 0.45f, t3 ? new Color(0.55f, 0.3f, 0.18f) : new Color(0.5f, 0.12f, 0.12f), true);
             mb.Box(cream, new Vector3(0, t3 ? wy - 0.62f : wy + 0.88f, 0), new Vector3(2.47f, 0.22f, L)); // the cream band
             mb.Box(roofGrey, new Vector3(0, wy + 1.0f, 0), new Vector3(2.3f, 0.12f, L - 0.3f));
             mb.Box(roofGrey, new Vector3(0, wy + 1.25f, k == 1 ? -2.5f : 0), new Vector3(1.7f, 0.38f, 4.5f)); // roof gear covers
@@ -316,7 +318,7 @@ public class Tram : MonoBehaviour
                 foreach (float dz in new[] { -2.6f, 2.6f })
                 {
                     mb.Box(doorM, new Vector3(sx * 1.24f, (fl + wy + 0.45f) / 2f, dz), new Vector3(0.04f, wy + 0.45f - fl, 1.3f));
-                    mb.Box(glass, new Vector3(sx * 1.25f, wy - 0.1f, dz), new Vector3(0.04f, 1.1f, 1.1f));
+                    mb.Box(Vehicles.SharedGlass, new Vector3(sx * 1.25f, wy - 0.1f, dz), new Vector3(0.04f, 1.1f, 1.1f));
                 }
             if (k == 1) // pantograph
             {
@@ -331,19 +333,25 @@ public class Tram : MonoBehaviour
                 if (!t3)
                 {
                     mb.Box(red, new Vector3(0, (fl + 1.6f) / 2f, z + e * 0.35f), new Vector3(2.3f, 1.6f - fl, 0.7f));
-                    mb.Box(glass, new Vector3(0, 2.35f, z + e * 0.22f), new Vector3(2.2f, 1.5f, 0.5f), Quaternion.Euler(e * -14f, 0, 0));
+                    Vehicles.GlassBand(mb, new Vector3(0, 2.35f, z + e * 0.22f), new Vector3(2.2f, 1.5f, 0.5f), Quaternion.Euler(e * -14f, 0, 0));
                     mb.Box(red, new Vector3(0, 3.1f, z + e * 0.05f), new Vector3(2.3f, 0.35f, 0.3f));
                 }
                 else
                 {
                     mb.Box(red, new Vector3(0, (fl + 2.0f) / 2f, z + e * 0.25f), new Vector3(2.3f, 2.0f - fl, 0.5f));
-                    mb.Box(glass, new Vector3(0, 2.5f, z + e * 0.2f), new Vector3(2.1f, 1.0f, 0.42f), Quaternion.Euler(e * -6f, 0, 0));
+                    Vehicles.GlassBand(mb, new Vector3(0, 2.5f, z + e * 0.2f), new Vector3(2.1f, 1.0f, 0.42f), Quaternion.Euler(e * -6f, 0, 0));
                 }
                 float lz = z + e * (t3 ? 0.51f : 0.71f);
                 foreach (float hx in new[] { -0.8f, 0.8f }) mb.Box(k == 0 ? head : tail, new Vector3(hx, fl + 0.55f, lz), new Vector3(0.28f, 0.16f, 0.05f));
                 mb.Box(amber, new Vector3(0, t3 ? 3.15f : 3.0f, z + e * (t3 ? 0.46f : 0.21f)), new Vector3(1.2f, 0.26f, 0.05f)); // route display
             }
+            if (k == 0) // the driver's cab: desk and controller
+            {
+                mb.Box(doorM, new Vector3(0, fl + 0.55f, L / 2f - 0.55f), new Vector3(1.6f, 1.1f, 0.5f));
+                mb.Box(doorM, new Vector3(0, (fl + wy + 0.5f) / 2f, L / 2f - 2.05f), new Vector3(2.3f, wy + 0.5f - fl, 0.05f)); // cab back wall
+            }
             mb.Build("Mesh", sec.transform, false).isStatic = false;
+            if (k == 0) Vehicles.Driver(sec.transform, new Vector3(0, fl + 0.5f, L / 2f - 1.25f), rng.Next());
             if (k == 0)
             {
                 var num = new GameObject("Linka").AddComponent<TextMeshPro>(); num.transform.SetParent(sec.transform, false);

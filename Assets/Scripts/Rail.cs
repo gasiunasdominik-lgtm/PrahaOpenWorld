@@ -156,18 +156,28 @@ public class RailTrain : MonoBehaviour
             var car = new GameObject("Vuz" + k); car.transform.SetParent(go.transform, false); car.layer = Traffic.CarLayer; car.tag = "Player";
             var mb = new MeshBuilder(); float L = CarLen - 0.6f, top = elefant ? 4.6f : 4.0f;
             mb.Box(grey, new Vector3(0, 0.55f, 0), new Vector3(2.6f, 0.7f, L - 1f)); // bogies, underframe
-            mb.Box(dark, new Vector3(0, (0.9f + 1.9f) / 2f, 0), new Vector3(2.82f, 1.0f, L));
-            mb.Box(sky, new Vector3(0, 2.0f, 0), new Vector3(2.83f, 0.22f, L));
-            if (elefant) // two decks of windows
+            // hollow shells around see-through window bands, the seats inside (blue-grey ČD upholstery)
+            var seatC = new Color(0.22f, 0.3f, 0.45f); float zs = -L / 2f + (k == 2 ? 3.2f : 4.4f), ze = L / 2f - (k == 0 ? 3.2f : 4.4f);
+            if (elefant) // two decks: low floor between the bogies, the upper deck over it
             {
-                mb.Box(glass, new Vector3(0, 1.55f, 0), new Vector3(2.84f, 0.7f, L - 7f));
-                mb.Box(white, new Vector3(0, 3.35f, 0), new Vector3(2.82f, 2.3f, L));
-                mb.Box(glass, new Vector3(0, 3.25f, 0), new Vector3(2.84f, 0.8f, L - 7f));
+                Vehicles.Shell(mb, dark, new Vector3(0, (0.9f + 1.2f) / 2f, 0), new Vector3(2.82f, 0.3f, L));
+                Vehicles.GlassBand(mb, new Vector3(0, 1.55f, 0), new Vector3(2.84f, 0.7f, L - 7f));
+                Vehicles.Shell(mb, dark, new Vector3(0, 1.55f, 0), new Vector3(2.82f, 0.7f, L)); // the ends beyond the band are door bays
+                Vehicles.Shell(mb, sky, new Vector3(0, 2.0f, 0), new Vector3(2.83f, 0.22f, L));
+                Vehicles.Shell(mb, white, new Vector3(0, 2.48f, 0), new Vector3(2.82f, 0.74f, L));
+                Vehicles.GlassBand(mb, new Vector3(0, 3.25f, 0), new Vector3(2.84f, 0.8f, L - 7f));
+                Vehicles.Shell(mb, white, new Vector3(0, 4.12f, 0), new Vector3(2.82f, 0.95f, L));
+                Vehicles.Saloon(mb, 2.7f, zs, ze, 0.95f, 2.35f, seatC, false, 1.9f);
+                Vehicles.Saloon(mb, 2.7f, zs, ze, 2.6f, 4.1f, seatC, false, 1.9f);
             }
             else
             {
-                mb.Box(white, new Vector3(0, 3.0f, 0), new Vector3(2.82f, 2.0f, L));
-                mb.Box(glass, new Vector3(0, 2.75f, 0), new Vector3(2.84f, 0.95f, L - 2f));
+                Vehicles.Shell(mb, dark, new Vector3(0, (0.9f + 1.9f) / 2f, 0), new Vector3(2.82f, 1.0f, L));
+                Vehicles.Shell(mb, sky, new Vector3(0, 2.0f, 0), new Vector3(2.83f, 0.22f, L));
+                Vehicles.Shell(mb, white, new Vector3(0, 2.19f, 0), new Vector3(2.82f, 0.16f, L));
+                Vehicles.GlassBand(mb, new Vector3(0, 2.75f, 0), new Vector3(2.84f, 0.95f, L - 2f));
+                Vehicles.Shell(mb, white, new Vector3(0, 3.61f, 0), new Vector3(2.82f, 0.78f, L));
+                Vehicles.Saloon(mb, 2.7f, zs, ze, 1.25f, 3.3f, seatC, false, 1.9f);
             }
             mb.Box(grey, new Vector3(0, top + 0.1f, 0), new Vector3(2.4f, 0.25f, L - 2f));
             foreach (float sx in new[] { -1f, 1f }) foreach (float dz in new[] { -L / 2f + 3.5f, L / 2f - 3.5f })
@@ -181,12 +191,15 @@ public class RailTrain : MonoBehaviour
             {
                 float e = k == 0 ? 1f : -1f, z = e * L / 2f;
                 mb.Box(dark, new Vector3(0, 1.4f, z + e * 0.6f), new Vector3(2.7f, 1.6f, 1.2f));
-                mb.Box(glass, new Vector3(0, 2.6f, z + e * 0.45f), new Vector3(2.5f, 1.3f, 0.9f), Quaternion.Euler(e * -25f, 0, 0));
+                Vehicles.GlassBand(mb, new Vector3(0, 2.6f, z + e * 0.45f), new Vector3(2.5f, 1.3f, 0.9f), Quaternion.Euler(e * -25f, 0, 0));
+                mb.Box(grey, new Vector3(0, 1.75f, z - e * 0.25f), new Vector3(2.4f, 0.9f, 0.6f)); // the driver's desk
+                mb.Box(grey, new Vector3(0, 2.6f, z - e * 1.9f), new Vector3(2.7f, 2.6f, 0.05f)); // cab back wall
                 mb.Box(white, new Vector3(0, top - 0.6f, z + e * 0.1f), new Vector3(2.6f, 1.0f, 0.4f));
                 foreach (float hx in new[] { -0.95f, 0.95f }) mb.Box(k == 0 ? head : tail, new Vector3(hx, 1.25f, z + e * 1.21f), new Vector3(0.3f, 0.18f, 0.05f));
                 mb.Box(head, new Vector3(0, top - 0.4f, z + e * 0.31f), new Vector3(0.3f, 0.18f, 0.05f));
             }
             var m = mb.Build("Mesh", car.transform, false); m.isStatic = false;
+            if (k != 1) { var drv = Vehicles.Driver(car.transform, new Vector3(0, 1.75f, (k == 0 ? 1f : -1f) * (L / 2f - 0.95f)), rng.Next()); if (drv && k == 2) drv.transform.parent.localRotation = Quaternion.Euler(0, 180f, 0); }
             var col = car.AddComponent<BoxCollider>(); col.center = new Vector3(0, top / 2f, 0); col.size = new Vector3(2.85f, top, CarLen);
             var rb = car.AddComponent<Rigidbody>(); rb.isKinematic = true;
             t.cars[k] = car.transform; t.rends[k] = car.GetComponentsInChildren<Renderer>();

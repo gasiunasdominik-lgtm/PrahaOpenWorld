@@ -114,6 +114,40 @@ public static class Vehicles
         return true;
     }
 
+    static Material sharedGlass, cabFloor, cabSeat, cabPole, cabLight, cabDesk;
+    public static Material SharedGlass { get { if (!sharedGlass) sharedGlass = Glass(new Color(0.5f, 0.58f, 0.62f, 0.3f)); return sharedGlass; } }
+    // a window band: glass sides and ends only, so the saloon behind it is seen
+    public static void GlassBand(MeshBuilder mb, Vector3 c, Vector3 size, Quaternion? rot = null) => mb.Box(SharedGlass, c, size, rot ?? Quaternion.identity, 0f, false, false);
+    // a hollow body shell (no top or bottom face) so the cabin is not filled solid
+    public static void Shell(MeshBuilder mb, Material m, Vector3 c, Vector3 size) => mb.Box(m, c, size, Quaternion.identity, 0f, false, false);
+
+    // A public-transport saloon along z: floor, ceiling with light panels, seat pairs along both sides facing the way of
+    // travel with an aisle between, and the yellow grab poles of Prague trams and trains. seatCol tints the upholstery.
+    public static void Saloon(MeshBuilder mb, float W, float z0, float z1, float floorY, float ceilY, Color seatCol, bool poles, float pitch = 1.7f)
+    {
+        if (!cabFloor)
+        {
+            cabFloor = Gfx.Mat(new Color(0.24f, 0.25f, 0.26f), 0.3f); cabPole = Gfx.Mat(new Color(0.95f, 0.75f, 0.05f), 0.6f);
+            cabLight = Gfx.Emissive(new Color(1f, 0.97f, 0.9f), 1.2f); cabDesk = Gfx.Mat(new Color(0.2f, 0.2f, 0.22f), 0.4f);
+        }
+        var seatM = Gfx.Mat(seatCol, 0.15f); var ceil = Gfx.Mat(new Color(0.85f, 0.86f, 0.86f), 0.3f);
+        float zc = (z0 + z1) / 2f, L = z1 - z0;
+        mb.Box(cabFloor, new Vector3(0, floorY - 0.03f, zc), new Vector3(W - 0.1f, 0.06f, L));
+        mb.Box(ceil, new Vector3(0, ceilY + 0.03f, zc), new Vector3(W - 0.1f, 0.06f, L), Quaternion.identity, 0f, false, true);
+        for (float z = z0 + 0.8f; z < z1 - 0.6f; z += 2.4f) mb.Box(cabLight, new Vector3(0, ceilY - 0.005f, z), new Vector3(0.5f, 0.02f, 1.3f), Quaternion.identity, 0f, false, true);
+        float sx = W / 2f - 0.55f;
+        for (float z = z0 + 0.6f; z < z1 - 0.5f; z += pitch)
+            foreach (float side in new[] { -1f, 1f })
+            {
+                var c = new Vector3(side * sx, floorY, z);
+                mb.Box(cabDesk, c + new Vector3(0, 0.22f, 0), new Vector3(0.9f, 0.44f, 0.4f));
+                mb.Box(seatM, c + new Vector3(0, 0.5f, 0), new Vector3(0.9f, 0.1f, 0.46f));
+                mb.Box(seatM, c + new Vector3(0, 0.88f, -0.25f), new Vector3(0.9f, 0.72f, 0.1f), Quaternion.Euler(-8f, 0, 0));
+                if (poles) mb.Box(cabPole, c + new Vector3(-side * 0.5f, (ceilY - floorY) / 2f, -0.35f), new Vector3(0.04f, ceilY - floorY, 0.04f));
+            }
+        if (poles) mb.Box(cabPole, new Vector3(0, ceilY - 0.22f, zc), new Vector3(0.035f, 0.035f, L - 0.4f));
+    }
+
     // a seated driver: hips on the seat, hands on the wheel
     public static HumanMotion Driver(Transform car, Vector3 seat, int seed)
     {
@@ -125,6 +159,20 @@ public static class Vehicles
         float hip = h.HipHeight();
         holder.localPosition = seat + new Vector3(0, -hip + 0.08f, 0.12f);
         foreach (var r in holder.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        car.gameObject.AddComponent<NearOnly>().target = holder.gameObject;
         return h;
+    }
+}
+
+// shows target only near the camera (the seated drivers are full skinned people, seen through the glass up close)
+public class NearOnly : MonoBehaviour
+{
+    public GameObject target; public float dist = 45f; float t;
+    void Update()
+    {
+        if (!target || (t -= Time.deltaTime) > 0f) return;
+        t = 0.4f + Random.value * 0.2f; var cam = Camera.main;
+        bool near = cam && (cam.transform.position - transform.position).sqrMagnitude < dist * dist;
+        if (target.activeSelf != near) target.SetActive(near);
     }
 }

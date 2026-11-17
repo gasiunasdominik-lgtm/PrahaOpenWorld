@@ -178,8 +178,20 @@ public class Boats : MonoBehaviour
         Hull(mb, L, W, 1.3f, 1.1f, white, accent, deck);
         // saloon: glass band between a white skirt and a white roof
         float cl = L * 0.62f, cw = W * 0.86f, z = -L * 0.06f;
-        mb.Box(white, new Vector3(0, 1.3f + 0.35f, z), new Vector3(cw, 0.7f, cl));
-        mb.Box(glass, new Vector3(0, 1.3f + 0.7f + 0.65f, z), new Vector3(cw - 0.1f, 1.3f, cl - 0.1f));
+        Vehicles.Shell(mb, white, new Vector3(0, 1.3f + 0.35f, z), new Vector3(cw, 0.7f, cl));
+        Vehicles.GlassBand(mb, new Vector3(0, 1.3f + 0.7f + 0.65f, z), new Vector3(cw - 0.1f, 1.3f, cl - 0.1f));
+        // inside: tables with white cloths between benches, as on the Prague river restaurant boats
+        var cloth = Gfx.Mat(new Color(0.95f, 0.95f, 0.93f), 0.2f); var bench = Gfx.Mat(new Color(0.42f, 0.12f, 0.1f), 0.2f);
+        mb.Box(deck, new Vector3(0, 1.33f, z), new Vector3(cw - 0.15f, 0.06f, cl - 0.15f));
+        mb.Box(Gfx.Mat(new Color(0.9f, 0.9f, 0.88f), 0.3f), new Vector3(0, 3.28f, z), new Vector3(cw - 0.15f, 0.04f, cl - 0.15f), Quaternion.identity, 0f, false, true);
+        for (float tz = -cl / 2 + 1.2f; tz < cl / 2 - 1f; tz += 1.9f)
+            foreach (float sx in new[] { -1f, 1f })
+            {
+                var tc = new Vector3(sx * (cw / 2 - 0.9f), 1.36f, z + tz);
+                mb.Box(cloth, tc + new Vector3(0, 0.74f, 0), new Vector3(1.1f, 0.04f, 0.8f));
+                mb.Box(white, tc + new Vector3(0, 0.36f, 0), new Vector3(0.08f, 0.72f, 0.08f));
+                foreach (float bz in new[] { -0.7f, 0.7f }) mb.Box(bench, tc + new Vector3(0, 0.25f, bz), new Vector3(1.1f, 0.5f, 0.42f));
+            }
         mb.Box(white, new Vector3(0, 1.3f + 2.0f + 0.12f, z), new Vector3(cw + 0.3f, 0.24f, cl + 0.4f));
         // open sun deck: railing posts and a rail, a small wheelhouse at the front
         float ry = 1.3f + 2.24f;
@@ -188,9 +200,16 @@ public class Boats : MonoBehaviour
             mb.Box(white, new Vector3(sx * cw / 2, ry + 0.9f, z), new Vector3(0.06f, 0.06f, cl));
             for (float pz = -cl / 2; pz <= cl / 2; pz += 1.6f) mb.Box(white, new Vector3(sx * cw / 2, ry + 0.45f, z + pz), new Vector3(0.05f, 0.9f, 0.05f));
         }
-        mb.Box(white, new Vector3(0, ry + 0.75f, z + cl / 2 - 1.2f), new Vector3(2.2f, 1.5f, 1.8f));
-        mb.Box(glass, new Vector3(0, ry + 1.05f, z + cl / 2 - 0.29f), new Vector3(2.0f, 0.7f, 0.05f));
-        return mb.Build("Lod", null, false);
+        // the wheelhouse: a glazed box on the sun deck, the skipper at the wheel
+        var wc = new Vector3(0, ry, z + cl / 2 - 1.2f);
+        Vehicles.Shell(mb, white, wc + new Vector3(0, 0.4f, 0), new Vector3(2.2f, 0.8f, 1.8f));
+        Vehicles.GlassBand(mb, wc + new Vector3(0, 1.1f, 0), new Vector3(2.2f, 0.6f, 1.8f));
+        mb.Box(white, wc + new Vector3(0, 1.45f, 0), new Vector3(2.4f, 0.1f, 2.0f), Quaternion.identity, 0f, true, true);
+        mb.Box(deck, wc + new Vector3(0, 0.02f, 0), new Vector3(2.1f, 0.04f, 1.7f));
+        mb.Box(Gfx.Mat(new Color(0.15f, 0.15f, 0.16f), 0.4f), wc + new Vector3(0, 0.5f, 0.6f), new Vector3(1.4f, 1.0f, 0.4f));
+        var go = mb.Build("Lod", null, false);
+        Vehicles.Driver(go.transform, wc + new Vector3(0, 0.55f, -0.1f), rng.Next());
+        return go;
     }
 
     static GameObject Pedalo(System.Random rng)
