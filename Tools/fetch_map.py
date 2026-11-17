@@ -7,6 +7,9 @@ Použití: python3 Tools/fetch_map.py   (výřez měníš v BBOX)
 import base64, collections, json, math, os, struct, sys, time, urllib.error, urllib.parse, urllib.request
 
 BBOX = (14.388, 50.073, 14.456, 50.095)          # lon_min, lat_min, lon_max, lat_max (Hradčany–Žižkov)
+# Malá Praha (testovací výřez, Docs/RECEPT_MALA_PRAHA.md): PRAHA_BBOX="14.401,50.0745,14.4215,50.0858" python3 Tools/fetch_map.py
+# ORIGIN zůstává stejný, takže souřadnice výřezu jsou shodné s velkým městem.
+if os.environ.get("PRAHA_BBOX"): BBOX = tuple(float(v) for v in os.environ["PRAHA_BBOX"].split(","))
 ORIGIN = (50.08647, 14.41138)                      # střed Karlova mostu = (0, 0, 0)
 RIVER = 186.0                                      # hladina Vltavy v centru (Staroměstský jez), m n. m.
 METRO_DEPTH = 25.0                                 # shortcut: skutečná hloubka tunelů v datech není, bereme typických 25 m pod terénem
