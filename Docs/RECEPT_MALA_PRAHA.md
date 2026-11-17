@@ -5,7 +5,7 @@
 > V Malé Praze se vyladí stavba a úpravy.
 > Hotové moduly se pak **předají zpět** do velkého projektu *PrahaOpenWorld* a tam se pustí na celé město.
 >
-> Jak recept použít: založ nový projekt podle kap. 2, otevři v něm novou konverzaci Claude Code a vlož jí úvodní prompt z kap. 9.
+> Jak recept použít: do nové konverzace Claude Code vlož **jediný prompt z kap. 9**. Projekt, data i stavbu zařídí Claude sám.
 > Mluv s ní česky.
 
 ---
@@ -259,16 +259,37 @@ Hotová fáze se předává takto:
 
 ---
 
-## 9. Úvodní prompt pro novou konverzaci (zkopíruj)
+## 9. Jediný prompt pro novou konverzaci
+
+Spusť Claude Code ve složce `C:\Users\dominik\documents\Hry` (ve WSL `/mnt/c/Users/dominik/documents/Hry`) a vlož tento prompt. Zbytek udělá Claude sám.
 
 ```
-Jsme v novém Unity projektu MalaPraha (Unity 6000.6.9f1, URP). Mluv česky.
-Přečti Docs/RECEPT_MALA_PRAHA.md (tento recept) a Docs/PREDANI_MESTO.md (chyby a poučení
-z velkého projektu PrahaOpenWorld). Stav projekt přesně podle receptu po fázích F0–F10:
-na konci každé fáze commit, 1–2 snímky, numerický akceptační test a záznam do Docs/PREDANI.md.
-Veškerý přenositelný kód patří do Assets/PrahaCore (namespace Praha), nic natvrdo na souřadnice,
-všechno ze stažených dat výřezu (PRAHA_BBOX, kap. 2 bod 6). Vzhled podle reálných fotek Prahy (jen jako reference), modely
-v Blenderu nebo CC0. Začni fází F0. Další fázi začni až po mém „pokračuj“.
-```
+Postav úplně sám nový Unity projekt „Malá Praha“ – skutečný výřez Prahy, na kterém se ladí
+stavba města, než se přenese do velkého projektu PrahaOpenWorld. Mluv se mnou česky.
 
-Do nového projektu zkopíruj do složky `Docs/` oba soubory: `RECEPT_MALA_PRAHA.md` a `PREDANI_MESTO.md`.
+Podklady jsou ve velkém repozitáři, větev worktree-phase7-property (čti je přes git, ne z worktree):
+  git -C /mnt/c/Users/dominik/documents/Hry/PrahaOpenWorld show worktree-phase7-property:Docs/RECEPT_MALA_PRAHA.md
+  git -C /mnt/c/Users/dominik/documents/Hry/PrahaOpenWorld show worktree-phase7-property:Docs/PREDANI_MESTO.md
+  git -C /mnt/c/Users/dominik/documents/Hry/PrahaOpenWorld show worktree-phase7-property:Docs/GTA5_research.md
+
+Postup:
+1. Přečti RECEPT_MALA_PRAHA.md a PREDANI_MESTO.md celé. Recept je zadání, PREDANI_MESTO.md jsou chyby
+   a poučení z velkého projektu – neopakuj je.
+2. Založ projekt C:\Users\dominik\documents\Hry\MalaPraha (Unity 6000.6.9f1, URP) přes unity CLI
+   a nastav ho podle kap. 2 receptu (balíčky, Project Settings, vrstvy, složky, asmdef, git init + .gitignore).
+   Oba dokumenty ulož do MalaPraha/Docs/.
+3. Převezmi z větve worktree-phase7-property složku Tools/ a Assets/Resources/People/
+   (git archive worktree-phase7-property Tools Assets/Resources/People | tar -x -C <MalaPraha>)
+   a stáhni data výřezu s PRAHA_BBOX="14.401,50.0745,14.4215,50.0858" (kap. 2 bod 6).
+4. Stav fáze F0–F10 podle kap. 5–7. Každá fáze končí numerickým akceptačním testem, 1–2 snímky
+   ze hry (sám je prohlédni a oprav, co nesedí s reálnými fotkami Prahy), commitem a zápisem
+   do Docs/PREDANI.md ve formátu z kap. 8. Pokračuj fázi za fází bez čekání na mě; zastav se jen,
+   když potřebuješ něco, co nezvládneš sám (přihlášení, licence, zásadní rozhodnutí).
+5. Pravidla: přenositelný kód jen v Assets/PrahaCore (namespace Praha); nic natvrdo na souřadnice,
+   vše z dat výřezu; opravy dat v Python skriptech (Tools/overrides.json); vzhled podle reálných fotek
+   Prahy (jen jako reference, respektuj licence), modely v Blenderu
+   (/mnt/c/Users/dominik/documents/Hry/tools/blender-4.2.3-windows-x64/blender.exe) nebo CC0;
+   výkon ≥ 90 FPS; externí API s User-Agent „PrahaOpenWorld-game/0.1“ a bez mých osobních údajů.
+   Do repozitáře PrahaOpenWorld nic nezapisuj ani nepushuj.
+6. Na konci každé fáze mi napiš krátce česky, co je hotové, co ne a jaká čísla vyšla.
+```
